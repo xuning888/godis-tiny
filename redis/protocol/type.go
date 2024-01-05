@@ -52,7 +52,7 @@ type BulkReply struct {
 
 func (b *BulkReply) ToBytes() []byte {
 	if b.Arg == nil {
-		return NullBulkReply
+		return NullBulkReplyBytes
 	}
 	return []byte(fmt.Sprintf("$%d%s%s%s", len(b.Arg), CRCF, string(b.Arg), CRCF))
 }
@@ -76,7 +76,7 @@ func MakeMultiBulkReply(rows [][]byte) *MultiBulkReply {
 
 func (m *MultiBulkReply) ToBytes() []byte {
 	if m.Rows == nil {
-		return NullBulkReply
+		return NullBulkReplyBytes
 	}
 	numRows := len(m.Rows)
 	var buf bytes.Buffer

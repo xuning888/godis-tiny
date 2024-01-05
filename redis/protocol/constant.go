@@ -1,5 +1,13 @@
 package protocol
 
 var (
-	NullBulkReply = []byte("$-1" + CRCF)
+	NullBulkReplyBytes = []byte("$-1" + CRCF)
+	PongReplyBytes     = []byte("+PONG" + CRCF)
 )
+
+type PongReply struct {
+}
+
+func (p *PongReply) ToBytes() []byte {
+	return PongReplyBytes
+}
