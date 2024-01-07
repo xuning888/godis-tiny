@@ -38,7 +38,7 @@ func parseToLint(cmdLine database.CmdLine) *cmdLint {
 	cmdData := cmdLine[1:]
 	cmdString := make([]string, len(cmdData))
 	for i := 0; i < len(cmdData); i++ {
-		cmdString[i] = string(cmdData[i])
+		cmdString[i] = "'" + string(cmdData[i]) + "'"
 	}
 	return &cmdLint{
 		cmdName:   cmdName,
@@ -77,7 +77,7 @@ func (db *DB) execNormalCmd(c redis.Connection, lint *cmdLint) redis.Reply {
 	cmd := getCommand(cmdName)
 	if cmd == nil {
 		return protocol.MakeStandardErrReply(fmt.Sprintf("ERR unknown command `%s`, with args beginning with: %s",
-			cmdName, strings.Join(lint.cmdString, ",")))
+			cmdName, strings.Join(lint.cmdString, ", ")))
 	}
 	if !db.validateArray(cmd.arity, lint) {
 		return protocol.MakeNumberOfArgsErrReply(cmdName)
