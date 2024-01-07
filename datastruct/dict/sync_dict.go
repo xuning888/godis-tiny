@@ -6,20 +6,33 @@ import (
 )
 
 type SimpleSync struct {
-	data  sync.Map
-	count int32
+	data    sync.Map
+	count   int32
+	rwMutex sync.RWMutex
 }
 
 func (s *SimpleSync) Get(key string) (value interface{}, exists bool) {
+	s.rwMutex.RLock()
+	defer func() {
+		s.rwMutex.RUnlock()
+	}()
 	load, ok := s.data.Load(key)
 	return load, ok
 }
 
 func (s *SimpleSync) Len() int {
+	s.rwMutex.RLock()
+	defer func() {
+		s.rwMutex.RUnlock()
+	}()
 	return int(atomic.LoadInt32(&s.count))
 }
 
 func (s *SimpleSync) Put(key string, value interface{}) (result int) {
+	s.rwMutex.Lock()
+	defer func() {
+		s.rwMutex.Unlock()
+	}()
 	_, ok := s.data.Load(key)
 	s.data.Store(key, value)
 	if ok {
@@ -30,6 +43,10 @@ func (s *SimpleSync) Put(key string, value interface{}) (result int) {
 }
 
 func (s *SimpleSync) PutIfAbsent(key string, value interface{}) (result int) {
+	s.rwMutex.Lock()
+	defer func() {
+		s.rwMutex.Unlock()
+	}()
 	_, ok := s.data.Load(key)
 	if ok {
 		return 0
@@ -40,6 +57,10 @@ func (s *SimpleSync) PutIfAbsent(key string, value interface{}) (result int) {
 }
 
 func (s *SimpleSync) PutIfExists(key string, value interface{}) (result int) {
+	s.rwMutex.Lock()
+	defer func() {
+		s.rwMutex.Unlock()
+	}()
 	_, ok := s.data.Load(key)
 	if ok {
 		s.data.Store(key, value)
@@ -49,6 +70,10 @@ func (s *SimpleSync) PutIfExists(key string, value interface{}) (result int) {
 }
 
 func (s *SimpleSync) Remove(key string) (result int) {
+	s.rwMutex.Lock()
+	defer func() {
+		s.rwMutex.Unlock()
+	}()
 	_, ok := s.data.Load(key)
 	if ok {
 		s.data.Delete(key)
@@ -59,6 +84,10 @@ func (s *SimpleSync) Remove(key string) (result int) {
 }
 
 func (s *SimpleSync) ForEach(consumer Consumer) {
+	s.rwMutex.RLock()
+	defer func() {
+		s.rwMutex.RUnlock()
+	}()
 	s.data.Range(func(key, value interface{}) bool {
 		entity := key.(string)
 		return consumer(entity, value)
@@ -66,6 +95,10 @@ func (s *SimpleSync) ForEach(consumer Consumer) {
 }
 
 func (s *SimpleSync) Keys() []string {
+	s.rwMutex.RLock()
+	defer func() {
+		s.rwMutex.RUnlock()
+	}()
 	result := make([]string, s.Len())
 	i := 0
 	s.data.Range(func(key, _ interface{}) bool {
@@ -77,6 +110,10 @@ func (s *SimpleSync) Keys() []string {
 }
 
 func (s *SimpleSync) RandomKeys(limit int) []string {
+	s.rwMutex.RLock()
+	defer func() {
+		s.rwMutex.RUnlock()
+	}()
 	if limit >= s.Len() {
 		limit = s.Len()
 	}
@@ -91,6 +128,10 @@ func (s *SimpleSync) RandomKeys(limit int) []string {
 }
 
 func (s *SimpleSync) RandomDistinctKeys(limit int) []string {
+	s.rwMutex.RLock()
+	defer func() {
+		s.rwMutex.RUnlock()
+	}()
 	if limit >= s.Len() {
 		limit = s.Len()
 	}
