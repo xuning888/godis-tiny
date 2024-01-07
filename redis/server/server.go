@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	database2 "g-redis/database"
+	"g-redis/interface/database"
 	"g-redis/pkg/atomic"
-	conn2 "g-redis/redis/conn"
+	"g-redis/redis/connection"
 	"g-redis/redis/parser"
 	"g-redis/redis/protocol"
 	"io"
@@ -19,12 +21,14 @@ type Handler struct {
 	// activate 持有活跃对连接
 	activate sync.Map
 	// closing 标记服务是否启动
-	closing atomic.Boolean
+	closing  atomic.Boolean
+	dbEngine database.DBEngine
 }
 
 func MakeHandler() *Handler {
 	return &Handler{
 		activate: sync.Map{},
+		dbEngine: database2.MakeStandalone(),
 	}
 }
 
@@ -33,8 +37,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 		_ = conn.Close()
 		return
 	}
-
-	client := conn2.NewConn(conn)
+	client := connection.NewConn(conn)
 	h.activate.Store(client, struct{}{})
 	ch := parser.ParseFromStream(conn)
 	for payload := range ch {
@@ -66,8 +69,9 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 			log.Printf("require multi bulk protocol")
 			continue
 		}
-		log.Println(fmt.Sprintf("output: %s", string(r.ToBytes())))
-		_, err := client.Write(protocol.MakePongReply().ToBytes())
+		result := h.dbEngine.Exec(client, r.Args)
+		log.Println(fmt.Sprintf("output: %s", string(result.ToBytes())))
+		_, err := client.Write(result.ToBytes())
 		if err != nil {
 			h.closeClient(client)
 			log.Println("connection closed: " + client.RemoteAddr().String())
@@ -75,16 +79,18 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 	}
 }
 
-func (h *Handler) closeClient(client *conn2.Connection) {
+func (h *Handler) closeClient(client *connection.Connection) {
 	_ = client.Close()
 	h.activate.Delete(client)
 }
 
 func (h *Handler) Close() error {
-
+	if h.closing.Get() {
+		return nil
+	}
 	h.closing.Set(true)
 	h.activate.Range(func(key, value interface{}) bool {
-		client := key.(*conn2.Connection)
+		client := key.(*connection.Connection)
 		_ = client.Close()
 		return true
 	})

@@ -22,7 +22,7 @@ type SimpleReply struct {
 }
 
 func (s *SimpleReply) ToBytes() []byte {
-	return s.Arg
+	return []byte(fmt.Sprintf("+%s%s", string(s.Arg), CRLF))
 }
 
 func MakeSimpleReply(arg []byte) *SimpleReply {

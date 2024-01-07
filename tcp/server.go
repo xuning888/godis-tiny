@@ -2,8 +2,10 @@ package tcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"g-redis/interface/tcp"
+	"g-redis/pkg/atomic"
 	"log"
 	"net"
 	"os"
@@ -12,6 +14,8 @@ import (
 	"syscall"
 )
 
+var closing atomic.Boolean
+
 // listenAndServe 监听tcp连接， 并把连接分发给应用层服务器进行处理
 // 当监听到 closeChan 发送的事件后，就关闭服务器
 func listenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan struct{}) {
@@ -19,17 +23,12 @@ func listenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 	go func() {
 		// channel 阻塞在这里
 		<-closeChan
-		log.Printf("shutting down....")
-		// 关闭 tcp listener, listener.Accept() 会立刻返回 io.EOF
-		_ = listener.Close()
-		// 关闭应用服务器
-		_ = handler.Close()
+		shutdown(listener, handler)
 	}()
 
 	defer func() {
 		// 当程序关闭时关闭资源
-		_ = listener.Close()
-		_ = handler.Close()
+		shutdown(listener, handler)
 	}()
 	ctx := context.Background()
 	var waitDown sync.WaitGroup
@@ -37,9 +36,14 @@ func listenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 		// Accept会一直阻塞到新的连接建立或者listener中断才会返回
 		conn, err := listener.Accept()
 		if err != nil {
-			// 通常是由于listener 关闭无法继续监听导致的错误
+			// 检查是否因为监听器已关闭导致的错误
+			var netErr net.Error
+			if errors.As(err, &netErr) && !netErr.Timeout() {
+				log.Printf("listener is closed, exiting accept loop: %v", err)
+				break
+			}
 			log.Printf("accept conn has error: %v", err)
-			break
+			continue
 		}
 		log.Printf("accept conn:%s", conn.RemoteAddr().String())
 		waitDown.Add(1)
@@ -52,6 +56,24 @@ func listenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 		}()
 	}
 	waitDown.Wait()
+}
+
+func shutdown(listener net.Listener, handler tcp.Handler) {
+	if closing.Get() {
+		return
+	}
+	closing.Set(true)
+	log.Printf("shutting down....")
+	// 关闭 tcp listener, listener.Accept() 会立刻返回 io.EOF
+	err := listener.Close()
+	if err != nil {
+		log.Println(fmt.Sprintf("shut down listener has error: %v", err))
+	}
+	// 关闭应用服务器
+	err = handler.Close()
+	if err != nil {
+		log.Println(fmt.Sprintf("shut down application has error: %v", err))
+	}
 }
 
 // ListenAndServeWithSignal 监听指定的端口号，建立连接时派发给应用层服务器进行处理
