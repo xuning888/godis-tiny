@@ -4,6 +4,8 @@ import (
 	"sync"
 )
 
+var lock = sync.Mutex{}
+
 type SimpleSync struct {
 	data sync.Map
 }
@@ -107,6 +109,8 @@ func (s *SimpleSync) RandomDistinctKeys(limit int) []string {
 }
 
 func (s *SimpleSync) Clear() {
+	lock.Lock()
+	defer lock.Unlock()
 	*s = *MakeSimpleSync()
 }
 
