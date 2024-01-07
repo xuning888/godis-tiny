@@ -13,3 +13,7 @@ type DBEngine interface {
 	// Close 关闭
 	Close() error
 }
+
+type DataEntity struct {
+	Data interface{}
+}

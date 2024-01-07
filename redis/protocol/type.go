@@ -124,3 +124,16 @@ func MakeStandardErrReply(status string) *StandardErrReply {
 		Status: status,
 	}
 }
+
+type NumberOfArgsErrReply struct {
+	cmdName string
+}
+
+func MakeNumberOfArgsErrReply(cmdName string) *NumberOfArgsErrReply {
+	return &NumberOfArgsErrReply{cmdName: cmdName}
+}
+
+func (n *NumberOfArgsErrReply) ToBytes() []byte {
+	errMsg := fmt.Sprintf("ERR wrong number of arguments for '%s' command", n.cmdName)
+	return MakeStandardErrReply(errMsg).ToBytes()
+}

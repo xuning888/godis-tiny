@@ -26,10 +26,6 @@ func MakeStandalone() *Standalone {
 
 func (s *Standalone) Exec(client redis.Connection, cmdLine database.CmdLine) redis.Reply {
 	lint := parseToLint(cmdLine)
-	cmdName := lint.GetCmdName()
-	if "ping" == cmdName {
-		return Ping(client, lint)
-	}
 	index := client.GetIndex()
 	db, reply := s.selectDb(index)
 	if reply != nil {
