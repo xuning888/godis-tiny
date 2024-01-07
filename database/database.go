@@ -68,6 +68,26 @@ func MakeDB(index int) *DB {
 	}
 }
 
+func MakeSimpleDb(index int) *DB {
+	return &DB{
+		index:      index,
+		data:       dict.MakeSimpleDict(),
+		ttlMap:     dict.MakeSimpleDict(),
+		versionMap: dict.MakeSimpleDict(),
+		locker:     lock.Make(1),
+	}
+}
+
+func MakeSimpleSync(index int) *DB {
+	return &DB{
+		index:      index,
+		data:       dict.MakeSimpleSync(),
+		ttlMap:     dict.MakeSimpleSync(),
+		versionMap: dict.MakeSimpleSync(),
+		locker:     lock.Make(1),
+	}
+}
+
 func (db *DB) Exec(c redis.Connection, lint *cmdLint) redis.Reply {
 	return db.execNormalCmd(c, lint)
 }

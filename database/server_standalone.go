@@ -14,7 +14,7 @@ type Standalone struct {
 func MakeStandalone() *Standalone {
 	dbSet := make([]*atomic.Value, 16)
 	for i := 0; i < 16; i++ {
-		sdb := MakeDB(i)
+		sdb := MakeSimpleSync(i)
 		holder := &atomic.Value{}
 		holder.Store(sdb)
 		dbSet[i] = holder
