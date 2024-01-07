@@ -1,7 +1,6 @@
 package database
 
 import (
-	"bytes"
 	"fmt"
 	"g-redis/datastruct/dict"
 	"g-redis/datastruct/lock"
@@ -16,9 +15,9 @@ import (
 
 // cmdLint database 内部流转的结构体，包含了客户端发送的命令名称和数据
 type cmdLint struct {
-	cmdName    string
-	cmdData    [][]byte
-	dataString string
+	cmdName   string
+	cmdData   [][]byte
+	cmdString []string
 }
 
 func (lint *cmdLint) GetCmdName() string {
@@ -37,17 +36,14 @@ func (lint *cmdLint) GetArgNum() int {
 func parseToLint(cmdLine database.CmdLine) *cmdLint {
 	cmdName := strings.ToLower(string(cmdLine[0]))
 	cmdData := cmdLine[1:]
-	var buf bytes.Buffer
+	cmdString := make([]string, len(cmdData))
 	for i := 0; i < len(cmdData); i++ {
-		buf.Write(cmdData[i])
-		if i != len(cmdData)-1 {
-			buf.Write([]byte{'\r', '\n'})
-		}
+		cmdString[i] = string(cmdData[i])
 	}
 	return &cmdLint{
-		cmdName:    cmdName,
-		cmdData:    cmdData,
-		dataString: buf.String(),
+		cmdName:   cmdName,
+		cmdData:   cmdData,
+		cmdString: cmdString,
 	}
 }
 
@@ -80,7 +76,8 @@ func (db *DB) execNormalCmd(c redis.Connection, lint *cmdLint) redis.Reply {
 	cmdName := lint.GetCmdName()
 	cmd := getCommand(cmdName)
 	if cmd == nil {
-		return protocol.MakeStandardErrReply(fmt.Sprintf("ERR unknown command `%s`, with args beginning with:", cmdName))
+		return protocol.MakeStandardErrReply(fmt.Sprintf("ERR unknown command `%s`, with args beginning with: %s",
+			cmdName, strings.Join(lint.cmdString, ",")))
 	}
 	if !db.validateArray(cmd.arity, lint) {
 		return protocol.MakeNumberOfArgsErrReply(cmdName)
@@ -142,6 +139,17 @@ func (db *DB) Removes(keys ...string) (deleted int) {
 		}
 	}
 	return deleted
+}
+
+func (db *DB) Exists(keys []string) int64 {
+	var result int64 = 0
+	for _, key := range keys {
+		_, ok := db.data.Get(key)
+		if ok {
+			result++
+		}
+	}
+	return result
 }
 
 func (db *DB) Flush() {

@@ -53,7 +53,24 @@ func execKeys(db *DB, lint *cmdLint) redis.Reply {
 	return protocol.MakeMultiRowReply(replies)
 }
 
+func exists(db *DB, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum == 0 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	keys := make([]string, argNum)
+	for i := 0; i < argNum; i++ {
+		keys[i] = string(lint.GetCmdData()[i])
+	}
+	if len(keys) == 0 {
+		return protocol.MakeIntReply(0)
+	}
+	result := db.Exists(keys)
+	return protocol.MakeIntReply(result)
+}
+
 func init() {
 	RegisterCmd("Del", execDel, -1)
 	RegisterCmd("keys", execKeys, 1)
+	RegisterCmd("exists", exists, -1)
 }
