@@ -4,7 +4,6 @@ import (
 	"g-redis/interface/database"
 	"g-redis/interface/redis"
 	"g-redis/redis/protocol"
-	"strings"
 	"sync/atomic"
 )
 
@@ -26,16 +25,17 @@ func MakeStandalone() *Standalone {
 }
 
 func (s *Standalone) Exec(client redis.Connection, cmdLine database.CmdLine) redis.Reply {
-	cmdName := strings.ToLower(string(cmdLine[0]))
+	lint := parseToLint(cmdLine)
+	cmdName := lint.GetCmdName()
 	if "ping" == cmdName {
-		return Ping(client, cmdLine)
+		return Ping(client, lint)
 	}
 	index := client.GetIndex()
 	db, reply := s.selectDb(index)
 	if reply != nil {
 		return reply
 	}
-	return db.Exec(client, cmdLine)
+	return db.Exec(client, lint)
 }
 
 func (s *Standalone) selectDb(index int) (*DB, *protocol.StandardErrReply) {
