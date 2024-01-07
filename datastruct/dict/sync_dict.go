@@ -111,7 +111,9 @@ func (s *SimpleSync) RandomDistinctKeys(limit int) []string {
 func (s *SimpleSync) Clear() {
 	lock.Lock()
 	defer lock.Unlock()
-	*s = *MakeSimpleSync()
+	if s.Len() > 0 {
+		*s = *MakeSimpleSync()
+	}
 }
 
 func MakeSimpleSync() *SimpleSync {
