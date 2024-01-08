@@ -94,5 +94,7 @@ func (h *Handler) Close() error {
 		_ = client.Close()
 		return true
 	})
+	// 关闭存储
+	_ = h.dbEngine.Close()
 	return nil
 }

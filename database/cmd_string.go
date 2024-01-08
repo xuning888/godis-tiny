@@ -84,7 +84,28 @@ func execSet(db *DB, lint *cmdLint) redis.Reply {
 	return protocol.MakeNullBulkReply()
 }
 
+// execGetSet getset key value
+func execGetSet(db *DB, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 2 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	value := cmdData[1]
+	oldValue, reply := db.getAsString(key)
+	if reply != nil {
+		return reply
+	}
+	db.PutEntity(key, &database.DataEntity{Data: value})
+	if oldValue != nil {
+		return protocol.MakeBulkReply(oldValue)
+	}
+	return protocol.MakeNullBulkReply()
+}
+
 func init() {
 	RegisterCmd("set", execSet, -2)
 	RegisterCmd("get", execGet, 1)
+	RegisterCmd("getset", execGetSet, -2)
 }

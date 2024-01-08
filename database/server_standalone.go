@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 )
 
+// Standalone 单机存储的存储引擎
 type Standalone struct {
 	dbSet []*atomic.Value
 }
@@ -42,6 +43,5 @@ func (s *Standalone) selectDb(index int) (*DB, *protocol.StandardErrReply) {
 }
 
 func (s *Standalone) Close() error {
-	//TODO implement me
-	panic("implement me")
+	return nil
 }

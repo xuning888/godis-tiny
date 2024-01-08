@@ -161,6 +161,8 @@ func (db *DB) Removes(keys ...string) (deleted int) {
 	return deleted
 }
 
+// Exists 返回一组key是否存在
+// eg: k1 -> v1, k2 -> v2。 input: k1 k2 return 2
 func (db *DB) Exists(keys []string) int64 {
 	var result int64 = 0
 	for _, key := range keys {

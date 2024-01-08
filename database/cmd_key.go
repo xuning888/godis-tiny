@@ -70,7 +70,7 @@ func exists(db *DB, lint *cmdLint) redis.Reply {
 }
 
 func init() {
-	RegisterCmd("Del", execDel, -1)
+	RegisterCmd("del", execDel, -1)
 	RegisterCmd("keys", execKeys, 1)
 	RegisterCmd("exists", exists, -1)
 }
