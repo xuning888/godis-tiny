@@ -73,3 +73,15 @@ func MakeSyntaxReply() *SyntaxReply {
 func (s *SyntaxReply) ToBytes() []byte {
 	return synTaxReplyBytes
 }
+
+// OutOfRangeOrNotIntErr ERR value is not an integer or out of range
+type OutOfRangeOrNotIntErr struct {
+}
+
+func (o *OutOfRangeOrNotIntErr) ToBytes() []byte {
+	return MakeStandardErrReply("ERR value is not an integer or out of range").ToBytes()
+}
+
+func MakeOutOfRangeOrNotInt() *OutOfRangeOrNotIntErr {
+	return &OutOfRangeOrNotIntErr{}
+}

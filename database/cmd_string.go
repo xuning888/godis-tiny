@@ -4,10 +4,9 @@ import (
 	"g-redis/interface/database"
 	"g-redis/interface/redis"
 	"g-redis/redis/protocol"
+	"strconv"
 	"strings"
 )
-
-const unlimitedTTL int64 = 0
 
 func (db *DB) getAsString(key string) ([]byte, protocol.ErrReply) {
 	entity, ok := db.GetEntity(key)
@@ -104,8 +103,40 @@ func execGetSet(db *DB, lint *cmdLint) redis.Reply {
 	return protocol.MakeNullBulkReply()
 }
 
+// execIncr incr key
+// TODO 存在并发问题，待修复
+func execIncr(db *DB, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 1 || argNum > 1 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	valueBytes, reply := db.getAsString(key)
+	if valueBytes == nil && reply == nil {
+		db.PutEntity(key, &database.DataEntity{
+			Data: []byte("1"),
+		})
+		return protocol.MakeIntReply(1)
+	} else if reply != nil {
+		return reply
+	} else {
+		value, err := strconv.Atoi(string(valueBytes))
+		if err != nil {
+			return protocol.MakeOutOfRangeOrNotInt()
+		}
+		value++
+		valueStr := strconv.Itoa(value)
+		db.PutEntity(key, &database.DataEntity{
+			Data: []byte(valueStr),
+		})
+		return protocol.MakeIntReply(int64(value))
+	}
+}
+
 func init() {
 	RegisterCmd("set", execSet, -2)
 	RegisterCmd("get", execGet, 1)
 	RegisterCmd("getset", execGetSet, -2)
+	RegisterCmd("incr", execIncr, 1)
 }
