@@ -26,9 +26,11 @@ type Handler struct {
 }
 
 func MakeHandler() *Handler {
+	dbEngin := database2.MakeStandalone()
+	dbEngin.Init()
 	return &Handler{
 		activate: sync.Map{},
-		dbEngine: database2.MakeStandalone(),
+		dbEngine: dbEngin,
 	}
 }
 
@@ -69,9 +71,11 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 			log.Printf("require multi bulk protocol")
 			continue
 		}
-		result := h.dbEngine.Exec(client, r.Args)
-		log.Println(fmt.Sprintf("output: %s", string(result.ToBytes())))
-		_, err := client.Write(result.ToBytes())
+
+		cmdResult := h.dbEngine.ExecV2(client, r.Args)
+		log.Println(fmt.Sprintf("output: %s", string(cmdResult.GetReply().ToBytes())))
+		conn := cmdResult.GetConn()
+		_, err := conn.Write(cmdResult.GetReply().ToBytes())
 		if err != nil {
 			h.closeClient(client)
 			log.Println("connection closed: " + client.RemoteAddr().String())
