@@ -196,6 +196,27 @@ func execGetRange(db *DB, lint *cmdLint) redis.Reply {
 	return protocol.MakeBulkReply([]byte(subValue))
 }
 
+// execMGet mget key[key...]
+func execMGet(db *DB, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 1 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	length := len(cmdData)
+	result := make([]redis.Reply, 0, length)
+	for _, keyBytes := range cmdData {
+		key := string(keyBytes)
+		value, _ := db.getAsString(key)
+		if value != nil {
+			result = append(result, protocol.MakeBulkReply(value))
+		} else {
+			result = append(result, protocol.MakeNullBulkReply())
+		}
+	}
+	return protocol.MakeMultiRowReply(result)
+}
+
 func init() {
 	RegisterCmd("set", execSet, -2)
 	RegisterCmd("get", execGet, 1)
@@ -203,4 +224,5 @@ func init() {
 	RegisterCmd("incr", execIncr, 1)
 	RegisterCmd("setnx", execSetNx, -2)
 	RegisterCmd("getrange", execGetRange, -3)
+	RegisterCmd("mget", execMGet, -1)
 }
