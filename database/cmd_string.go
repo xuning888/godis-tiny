@@ -271,6 +271,26 @@ func execMGet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeMultiRowReply(result)
 }
 
+// execGetDel getdel
+// todo if the key dose not exist of if the key's value type is not a string
+func execGetDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 1 || argNum > 1 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	valueBytes, reply := ctx.GetDb().getAsString(key)
+	if reply != nil {
+		return reply
+	} else if valueBytes == nil {
+		return protocol.MakeNullBulkReply()
+	} else {
+		ctx.GetDb().Remove(key)
+		return protocol.MakeBulkReply(valueBytes)
+	}
+}
+
 func init() {
 	RegisterCmd("set", execSet, -2)
 	RegisterCmd("get", execGet, 1)
@@ -281,4 +301,5 @@ func init() {
 	RegisterCmd("getrange", execGetRange, -3)
 	RegisterCmd("mget", execMGet, -1)
 	RegisterCmd("strlen", execStrLen, 1)
+	RegisterCmd("getdel", execGetDel, 1)
 }
