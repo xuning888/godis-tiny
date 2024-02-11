@@ -103,7 +103,7 @@ func execSetNx(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeIntReply(int64(res))
 }
 
-// execStrLen
+// execStrLen strlen key
 func execStrLen(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 1 || argNum > 1 {
@@ -179,6 +179,32 @@ func execIncr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	}
 }
 
+// execDecr decr key
+func execDecr(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 1 || argNum > 1 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	valueBytes, reply := ctx.GetDb().getAsString(key)
+	if reply != nil {
+		return reply
+	} else if valueBytes == nil {
+		ctx.GetDb().PutEntity(key, &database.DataEntity{Data: []byte("-1")})
+		return protocol.MakeIntReply(-1)
+	} else {
+		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
+		if err != nil {
+			return protocol.MakeOutOfRangeOrNotInt()
+		}
+		value--
+		valueStr := strconv.FormatInt(value, 10)
+		ctx.GetDb().PutEntity(key, &database.DataEntity{Data: []byte(valueStr)})
+		return protocol.MakeIntReply(value)
+	}
+}
+
 // execGetRange getrange key start end
 func execGetRange(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
@@ -250,6 +276,7 @@ func init() {
 	RegisterCmd("get", execGet, 1)
 	RegisterCmd("getset", execGetSet, -2)
 	RegisterCmd("incr", execIncr, 1)
+	RegisterCmd("decr", execDecr, 1)
 	RegisterCmd("setnx", execSetNx, -2)
 	RegisterCmd("getrange", execGetRange, -3)
 	RegisterCmd("mget", execMGet, -1)
