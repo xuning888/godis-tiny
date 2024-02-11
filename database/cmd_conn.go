@@ -6,7 +6,8 @@ import (
 	"strconv"
 )
 
-func ping(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+// ping exc ping reply pong
+func ping(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	args := lint.GetCmdData()
 	if len(args) == 0 {
 		return protocol.MakePongReply()
@@ -18,7 +19,9 @@ func ping(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 }
 
 // selectDb
-func selectDb(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func selectDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	db := ctx.GetDb()
+	conn := ctx.GetConn()
 	argNum := lint.GetArgNum()
 	if argNum < 1 || argNum > 1 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())

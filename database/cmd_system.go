@@ -11,7 +11,7 @@ const (
 	flushSync
 )
 
-func flushDb(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func flushDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	var policy int
 	// 默认同步刷新
@@ -29,6 +29,7 @@ func flushDb(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	} else {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
 	}
+	db := ctx.GetDb()
 	if policy == flushSync {
 		db.Flush()
 	} else {

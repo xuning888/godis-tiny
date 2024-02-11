@@ -16,6 +16,26 @@ type cmdLint struct {
 	cmdString []string
 }
 
+type CommandContext struct {
+	db   *DB
+	conn redis.Connection
+}
+
+func (c *CommandContext) GetDb() *DB {
+	return c.db
+}
+
+func (c *CommandContext) GetConn() redis.Connection {
+	return c.conn
+}
+
+func MakeCommandContext(db *DB, conn redis.Connection) *CommandContext {
+	return &CommandContext{
+		db:   db,
+		conn: conn,
+	}
+}
+
 func (lint *cmdLint) GetCmdName() string {
 	return lint.cmdName
 }
@@ -43,7 +63,7 @@ func parseToLint(cmdLine database.CmdLine) *cmdLint {
 	}
 }
 
-type ExeFunc func(db *DB, conn redis.Connection, cmdLint *cmdLint) redis.Reply
+type ExeFunc func(cmdCtx *CommandContext, cmdLint *cmdLint) redis.Reply
 
 // DB 存储数据的DB
 type DB struct {
@@ -79,7 +99,8 @@ func (db *DB) Exec(c redis.Connection, lint *cmdLint) redis.Reply {
 	if !db.validateArray(cmd.arity, lint) {
 		return protocol.MakeNumberOfArgsErrReply(cmdName)
 	}
-	return cmd.exeFunc(db, c, lint)
+	ctx := MakeCommandContext(db, c)
+	return cmd.exeFunc(ctx, lint)
 }
 
 func (db *DB) validateArray(arity int, lint *cmdLint) bool {

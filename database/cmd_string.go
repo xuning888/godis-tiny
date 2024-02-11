@@ -22,9 +22,10 @@ func (db *DB) getAsString(key string) ([]byte, protocol.ErrReply) {
 	return bytes, nil
 }
 
-func execGet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func execGet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	args := lint.GetCmdData()
 	key := string(args[0])
+	db := ctx.GetDb()
 	bytes, err := db.getAsString(key)
 	if err != nil {
 		return err
@@ -41,7 +42,7 @@ const (
 	updatePolicy        // set ex
 )
 
-func execSet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	args := lint.GetCmdData()
 	key := string(args[0])
 	value := args[1]
@@ -70,6 +71,7 @@ func execSet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 		Data: value,
 	}
 	var result int
+	db := ctx.GetDb()
 	switch policy {
 	case upsertPolicy:
 		db.PutEntity(key, entity)
@@ -86,7 +88,7 @@ func execSet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 }
 
 // execSetNx setnx key value
-func execSetNx(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func execSetNx(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 2 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -94,6 +96,7 @@ func execSetNx(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	cmdData := lint.GetCmdData()
 	key := string(cmdData[0])
 	value := cmdData[1]
+	db := ctx.GetDb()
 	res := db.PutIfAbsent(key, &database.DataEntity{
 		Data: value,
 	})
@@ -101,7 +104,7 @@ func execSetNx(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 }
 
 // execGetSet getset key value
-func execGetSet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func execGetSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 2 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -109,6 +112,7 @@ func execGetSet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	cmdData := lint.GetCmdData()
 	key := string(cmdData[0])
 	value := cmdData[1]
+	db := ctx.GetDb()
 	oldValue, reply := db.getAsString(key)
 	if reply != nil {
 		// TODO error log
@@ -123,13 +127,14 @@ func execGetSet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 
 // execIncr incr key
 // incr 命令存在对内存的读写操作，此处没有使用锁来保证线程安全, 而是在dbEngin中使用队列来保证命令排队执行
-func execIncr(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func execIncr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 1 || argNum > 1 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
 	}
 	cmdData := lint.GetCmdData()
 	key := string(cmdData[0])
+	db := ctx.GetDb()
 	valueBytes, reply := db.getAsString(key)
 	// 如果key不存在，就放一个1进去
 	if valueBytes == nil && reply == nil {
@@ -154,7 +159,7 @@ func execIncr(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 }
 
 // execGetRange getrange key start end
-func execGetRange(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func execGetRange(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 3 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -169,6 +174,7 @@ func execGetRange(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	if err != nil {
 		return protocol.MakeOutOfRangeOrNotInt()
 	}
+	db := ctx.GetDb()
 	bytes, reply := db.getAsString(key)
 	if reply != nil {
 		return reply
@@ -197,7 +203,7 @@ func execGetRange(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 }
 
 // execMGet mget key[key...]
-func execMGet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func execMGet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 1 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -205,6 +211,7 @@ func execMGet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	cmdData := lint.GetCmdData()
 	length := len(cmdData)
 	result := make([]redis.Reply, 0, length)
+	db := ctx.GetDb()
 	for _, keyBytes := range cmdData {
 		key := string(keyBytes)
 		value, _ := db.getAsString(key)

@@ -6,7 +6,7 @@ import (
 	"path"
 )
 
-func execDel(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func execDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	args := lint.GetCmdData()
 	if len(args) == 0 {
 		// 错误参数
@@ -16,6 +16,7 @@ func execDel(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	for i := 0; i < len(args); i++ {
 		keys[i] = string(args[i])
 	}
+	db := ctx.GetDb()
 	deleted := db.Removes(keys...)
 	if deleted > 0 {
 		return protocol.MakeIntReply(int64(deleted))
@@ -23,13 +24,13 @@ func execDel(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	return protocol.MakeIntReply(0)
 }
 
-func execKeys(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func execKeys(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	args := lint.GetCmdData()
 	if lint.GetArgNum() > 1 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
 	}
 	pattern := string(args[0])
-	keys := db.data.Keys()
+	keys := ctx.GetDb().data.Keys()
 	var matchedKeys []string
 	for _, key := range keys {
 		matched, err := path.Match(pattern, key)
@@ -53,7 +54,7 @@ func execKeys(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	return protocol.MakeMultiRowReply(replies)
 }
 
-func exists(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
+func exists(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum == 0 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -65,7 +66,7 @@ func exists(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	if len(keys) == 0 {
 		return protocol.MakeIntReply(0)
 	}
-	result := db.Exists(keys)
+	result := ctx.GetDb().Exists(keys)
 	return protocol.MakeIntReply(result)
 }
 
