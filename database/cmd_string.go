@@ -84,6 +84,21 @@ func execSet(db *DB, lint *cmdLint) redis.Reply {
 	return protocol.MakeNullBulkReply()
 }
 
+// execSetNx setnx key value
+func execSetNx(db *DB, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 2 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	value := cmdData[1]
+	res := db.PutIfAbsent(key, &database.DataEntity{
+		Data: value,
+	})
+	return protocol.MakeIntReply(int64(res))
+}
+
 // execGetSet getset key value
 func execGetSet(db *DB, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
@@ -142,4 +157,5 @@ func init() {
 	RegisterCmd("get", execGet, 1)
 	RegisterCmd("getset", execGetSet, -2)
 	RegisterCmd("incr", execIncr, 1)
+	RegisterCmd("setnx", execSetNx, -2)
 }
