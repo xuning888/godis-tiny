@@ -3,6 +3,7 @@ package database
 import (
 	"g-redis/interface/database"
 	"g-redis/interface/redis"
+	"g-redis/pkg/util"
 	"g-redis/redis/protocol"
 	"strconv"
 	"strings"
@@ -152,10 +153,54 @@ func execIncr(db *DB, lint *cmdLint) redis.Reply {
 	}
 }
 
+// execGetRange getrange key start end
+func execGetRange(db *DB, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 3 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	start, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
+	if err != nil {
+		return protocol.MakeOutOfRangeOrNotInt()
+	}
+	end, err := strconv.ParseInt(string(cmdData[2]), 10, 64)
+	if err != nil {
+		return protocol.MakeOutOfRangeOrNotInt()
+	}
+	bytes, reply := db.getAsString(key)
+	if reply != nil {
+		return reply
+	}
+	value := string(bytes)
+	// 计算偏移量
+	length := int64(len(value))
+	if start < 0 {
+		start = length + start
+		if start < 0 {
+			start = 0
+		}
+	}
+	if end < 0 {
+		end = length + end
+	}
+	// 计算边界
+	// 如果 start > end 或者 start 超过了数组的范围, 就返回空字符串
+	if start > end || start >= length {
+		return protocol.MakeBulkReply([]byte(""))
+	}
+	// end 和 length - 1 求一个最小值作为end
+	end = util.MinInt64(end, length-1)
+	subValue := value[start:(end + 1)]
+	return protocol.MakeBulkReply([]byte(subValue))
+}
+
 func init() {
 	RegisterCmd("set", execSet, -2)
 	RegisterCmd("get", execGet, 1)
 	RegisterCmd("getset", execGetSet, -2)
 	RegisterCmd("incr", execIncr, 1)
 	RegisterCmd("setnx", execSetNx, -2)
+	RegisterCmd("getrange", execGetRange, -3)
 }

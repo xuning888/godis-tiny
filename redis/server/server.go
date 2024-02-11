@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	database2 "g-redis/database"
 	"g-redis/interface/database"
 	"g-redis/pkg/atomic"
@@ -44,13 +43,13 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 	ch := parser.ParseFromStream(conn)
 	for payload := range ch {
 		if payload.Error != nil {
-			log.Println(fmt.Sprintf("input has error: %v", payload.Error))
+			// log.Println(fmt.Sprintf("input has error: %v", payload.Error))
 			if payload.Error == io.EOF ||
 				errors.Is(payload.Error, io.ErrUnexpectedEOF) ||
 				strings.Contains(payload.Error.Error(), "use of closed network connection") {
 				// connection closed
 				h.closeClient(client)
-				log.Printf("connection closed: " + conn.RemoteAddr().String())
+				// log.Printf("connection closed: " + conn.RemoteAddr().String())
 				return
 			}
 			errReply := protocol.MakeStandardErrReply(payload.Error.Error())
@@ -62,23 +61,23 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 			}
 			continue
 		}
-		log.Println(fmt.Sprintf("input: %s", string(payload.Data.ToBytes())))
+		// log.Println(fmt.Sprintf("input: %s", string(payload.Data.ToBytes())))
 		if payload.Data == nil {
 			continue
 		}
 		r, ok := payload.Data.(*protocol.MultiBulkReply)
 		if !ok {
-			log.Printf("require multi bulk protocol")
+			// log.Printf("require multi bulk protocol")
 			continue
 		}
 
 		cmdResult := h.dbEngine.ExecV2(client, r.Args)
-		log.Println(fmt.Sprintf("output: %s", string(cmdResult.GetReply().ToBytes())))
+		// log.Println(fmt.Sprintf("output: %s", string(cmdResult.GetReply().ToBytes())))
 		conn := cmdResult.GetConn()
 		_, err := conn.Write(cmdResult.GetReply().ToBytes())
 		if err != nil {
 			h.closeClient(client)
-			log.Println("connection closed: " + client.RemoteAddr().String())
+			// log.Println("connection closed: " + client.RemoteAddr().String())
 		}
 	}
 }
