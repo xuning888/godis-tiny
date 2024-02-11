@@ -103,6 +103,27 @@ func execSetNx(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeIntReply(int64(res))
 }
 
+// execStrLen
+func execStrLen(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 1 || argNum > 1 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	db := ctx.GetDb()
+	value, reply := db.getAsString(key)
+	if reply != nil {
+		return reply
+	} else if value == nil {
+		return protocol.MakeIntReply(0)
+	} else {
+		str := string(value)
+		strLen := len(str)
+		return protocol.MakeIntReply(int64(strLen))
+	}
+}
+
 // execGetSet getset key value
 func execGetSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
@@ -232,4 +253,5 @@ func init() {
 	RegisterCmd("setnx", execSetNx, -2)
 	RegisterCmd("getrange", execGetRange, -3)
 	RegisterCmd("mget", execMGet, -1)
+	RegisterCmd("strlen", execStrLen, 1)
 }
