@@ -68,7 +68,7 @@ func MakeSimpleDb(index int) *DB {
 func MakeSimpleSync(index int) *DB {
 	return &DB{
 		index: index,
-		data:  dict.MakeSimpleSync(),
+		data:  dict.MakeSimpleDict(),
 	}
 }
 
@@ -153,5 +153,8 @@ func (db *DB) Exists(keys []string) int64 {
 }
 
 func (db *DB) Flush() {
-	db.data.Clear()
+	length := db.data.Len()
+	if length > 0 {
+		db.data.Clear()
+	}
 }

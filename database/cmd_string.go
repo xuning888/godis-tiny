@@ -13,6 +13,7 @@ func (db *DB) getAsString(key string) ([]byte, protocol.ErrReply) {
 	if !ok {
 		return nil, nil
 	}
+	// 类型转换
 	bytes, ok := entity.Data.([]byte)
 	if !ok {
 		return nil, &protocol.WrongTypeErrReply{}
@@ -94,6 +95,7 @@ func execGetSet(db *DB, lint *cmdLint) redis.Reply {
 	value := cmdData[1]
 	oldValue, reply := db.getAsString(key)
 	if reply != nil {
+		// TODO error log
 		return reply
 	}
 	db.PutEntity(key, &database.DataEntity{Data: value})
@@ -104,7 +106,7 @@ func execGetSet(db *DB, lint *cmdLint) redis.Reply {
 }
 
 // execIncr incr key
-// TODO 存在并发问题，待修复
+// incr 命令存在对内存的读写操作，此处没有使用锁来保证线程安全, 而是在dbEngin中使用队列来保证命令排队执行
 func execIncr(db *DB, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 1 || argNum > 1 {
@@ -113,6 +115,7 @@ func execIncr(db *DB, lint *cmdLint) redis.Reply {
 	cmdData := lint.GetCmdData()
 	key := string(cmdData[0])
 	valueBytes, reply := db.getAsString(key)
+	// 如果key不存在，就放一个1进去
 	if valueBytes == nil && reply == nil {
 		db.PutEntity(key, &database.DataEntity{
 			Data: []byte("1"),
@@ -121,16 +124,16 @@ func execIncr(db *DB, lint *cmdLint) redis.Reply {
 	} else if reply != nil {
 		return reply
 	} else {
-		value, err := strconv.Atoi(string(valueBytes))
+		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
 		if err != nil {
 			return protocol.MakeOutOfRangeOrNotInt()
 		}
 		value++
-		valueStr := strconv.Itoa(value)
+		valueStr := strconv.FormatInt(value, 10)
 		db.PutEntity(key, &database.DataEntity{
 			Data: []byte(valueStr),
 		})
-		return protocol.MakeIntReply(int64(value))
+		return protocol.MakeIntReply(value)
 	}
 }
 

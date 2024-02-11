@@ -10,9 +10,8 @@ type CmdLine = [][]byte
 type DBEngine interface {
 	// Exec client 上的命令
 	Exec(client redis.Connection, cmdLine CmdLine) redis.Reply
-
-	ExecV2(client redis.Connection, cmdLine CmdLine) *CmdResult
-
+	// ExecV2 client 上的命令，使用 channel 来保证线程安全，缺点就是无法读并发
+	ExecV2(client redis.Connection, cmdLine CmdLine) *CmdRes
 	// Close 关闭
 	Close() error
 	// Init 做必要的初始化工作
@@ -36,29 +35,29 @@ func (c *CmdReq) GetCmdLine() CmdLine {
 	return c.cmdLine
 }
 
-func MakeCmdReq(conn redis.Connection, cmdLine CmdLine) *CmdReq {
-	return &CmdReq{
-		conn:    conn,
-		cmdLine: cmdLine,
-	}
-}
-
-type CmdResult struct {
+type CmdRes struct {
 	reply redis.Reply
 	conn  redis.Connection
 }
 
-func (c *CmdResult) GetReply() redis.Reply {
+func (c *CmdRes) GetReply() redis.Reply {
 	return c.reply
 }
 
-func (c *CmdResult) GetConn() redis.Connection {
+func (c *CmdRes) GetConn() redis.Connection {
 	return c.conn
 }
 
-func MakeCmdRes(conn redis.Connection, reply redis.Reply) *CmdResult {
-	return &CmdResult{
+func MakeCmdRes(conn redis.Connection, reply redis.Reply) *CmdRes {
+	return &CmdRes{
 		conn:  conn,
 		reply: reply,
+	}
+}
+
+func MakeCmdReq(conn redis.Connection, cmdLine CmdLine) *CmdReq {
+	return &CmdReq{
+		conn:    conn,
+		cmdLine: cmdLine,
 	}
 }
