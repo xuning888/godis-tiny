@@ -11,18 +11,7 @@ const (
 	flushSync
 )
 
-func ping(db *DB, lint *cmdLint) redis.Reply {
-	args := lint.GetCmdData()
-	if len(args) == 0 {
-		return protocol.MakePongReply()
-	} else if len(args) == 1 {
-		return protocol.MakeSimpleReply(args[0])
-	} else {
-		return protocol.MakeNumberOfArgsErrReply(lint.cmdName)
-	}
-}
-
-func flushDb(db *DB, lint *cmdLint) redis.Reply {
+func flushDb(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	var policy int
 	// 默认同步刷新

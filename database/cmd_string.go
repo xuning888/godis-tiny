@@ -22,7 +22,7 @@ func (db *DB) getAsString(key string) ([]byte, protocol.ErrReply) {
 	return bytes, nil
 }
 
-func execGet(db *DB, lint *cmdLint) redis.Reply {
+func execGet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	args := lint.GetCmdData()
 	key := string(args[0])
 	bytes, err := db.getAsString(key)
@@ -41,7 +41,7 @@ const (
 	updatePolicy        // set ex
 )
 
-func execSet(db *DB, lint *cmdLint) redis.Reply {
+func execSet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	args := lint.GetCmdData()
 	key := string(args[0])
 	value := args[1]
@@ -86,7 +86,7 @@ func execSet(db *DB, lint *cmdLint) redis.Reply {
 }
 
 // execSetNx setnx key value
-func execSetNx(db *DB, lint *cmdLint) redis.Reply {
+func execSetNx(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 2 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -101,7 +101,7 @@ func execSetNx(db *DB, lint *cmdLint) redis.Reply {
 }
 
 // execGetSet getset key value
-func execGetSet(db *DB, lint *cmdLint) redis.Reply {
+func execGetSet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 2 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -123,7 +123,7 @@ func execGetSet(db *DB, lint *cmdLint) redis.Reply {
 
 // execIncr incr key
 // incr 命令存在对内存的读写操作，此处没有使用锁来保证线程安全, 而是在dbEngin中使用队列来保证命令排队执行
-func execIncr(db *DB, lint *cmdLint) redis.Reply {
+func execIncr(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 1 || argNum > 1 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -154,7 +154,7 @@ func execIncr(db *DB, lint *cmdLint) redis.Reply {
 }
 
 // execGetRange getrange key start end
-func execGetRange(db *DB, lint *cmdLint) redis.Reply {
+func execGetRange(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 3 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -197,7 +197,7 @@ func execGetRange(db *DB, lint *cmdLint) redis.Reply {
 }
 
 // execMGet mget key[key...]
-func execMGet(db *DB, lint *cmdLint) redis.Reply {
+func execMGet(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 1 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())

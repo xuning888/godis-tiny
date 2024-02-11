@@ -6,7 +6,7 @@ import (
 	"path"
 )
 
-func execDel(db *DB, lint *cmdLint) redis.Reply {
+func execDel(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	args := lint.GetCmdData()
 	if len(args) == 0 {
 		// 错误参数
@@ -23,7 +23,7 @@ func execDel(db *DB, lint *cmdLint) redis.Reply {
 	return protocol.MakeIntReply(0)
 }
 
-func execKeys(db *DB, lint *cmdLint) redis.Reply {
+func execKeys(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	args := lint.GetCmdData()
 	if lint.GetArgNum() > 1 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -53,7 +53,7 @@ func execKeys(db *DB, lint *cmdLint) redis.Reply {
 	return protocol.MakeMultiRowReply(replies)
 }
 
-func exists(db *DB, lint *cmdLint) redis.Reply {
+func exists(db *DB, conn redis.Connection, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum == 0 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())

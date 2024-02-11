@@ -43,40 +43,33 @@ func parseToLint(cmdLine database.CmdLine) *cmdLint {
 	}
 }
 
-type ExeFunc func(db *DB, cmdLint *cmdLint) redis.Reply
+type ExeFunc func(db *DB, conn redis.Connection, cmdLint *cmdLint) redis.Reply
 
-// DB 存储
+// DB 存储数据的DB
 type DB struct {
-	index int
-	data  dict.Dict
+	index   int
+	dbEngin database.DBEngine
+	data    dict.Dict
 }
 
-func MakeDB(index int) *DB {
+// MakeSimpleDb 使用map的实现，无锁结构
+func MakeSimpleDb(index int, dbEngin database.DBEngine) *DB {
 	return &DB{
-		index: index,
-		data:  dict.MakeConcurrent(16),
+		index:   index,
+		dbEngin: dbEngin,
+		data:    dict.MakeSimpleDict(),
 	}
 }
 
-func MakeSimpleDb(index int) *DB {
-	return &DB{
-		index: index,
-		data:  dict.MakeSimpleDict(),
-	}
-}
-
+// MakeSimpleSync 使用sync.Map的实现
 func MakeSimpleSync(index int) *DB {
 	return &DB{
 		index: index,
-		data:  dict.MakeSimpleDict(),
+		data:  dict.MakeSimpleSync(),
 	}
 }
 
 func (db *DB) Exec(c redis.Connection, lint *cmdLint) redis.Reply {
-	return db.execNormalCmd(c, lint)
-}
-
-func (db *DB) execNormalCmd(c redis.Connection, lint *cmdLint) redis.Reply {
 	cmdName := lint.GetCmdName()
 	cmd := getCommand(cmdName)
 	if cmd == nil {
@@ -86,7 +79,7 @@ func (db *DB) execNormalCmd(c redis.Connection, lint *cmdLint) redis.Reply {
 	if !db.validateArray(cmd.arity, lint) {
 		return protocol.MakeNumberOfArgsErrReply(cmdName)
 	}
-	return cmd.exeFunc(db, lint)
+	return cmd.exeFunc(db, c, lint)
 }
 
 func (db *DB) validateArray(arity int, lint *cmdLint) bool {

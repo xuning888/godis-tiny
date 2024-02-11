@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"g-redis/interface/database"
 	"g-redis/interface/redis"
 	"g-redis/redis/protocol"
@@ -15,18 +16,26 @@ type Standalone struct {
 }
 
 func MakeStandalone() *Standalone {
+	server := &Standalone{
+		resQueue: make(chan *database.CmdRes, 1000),
+		reqQueue: make(chan *database.CmdReq, 1000),
+	}
 	dbSet := make([]*atomic.Value, 16)
 	for i := 0; i < 16; i++ {
-		sdb := MakeSimpleSync(i)
+		sdb := MakeSimpleDb(i, server)
 		holder := &atomic.Value{}
 		holder.Store(sdb)
 		dbSet[i] = holder
 	}
-	return &Standalone{
-		dbSet:    dbSet,
-		resQueue: make(chan *database.CmdRes, 1000),
-		reqQueue: make(chan *database.CmdReq, 1000),
+	server.dbSet = dbSet
+	return server
+}
+
+func (s *Standalone) CheckIndex(index int) error {
+	if index >= len(s.dbSet) || index < 0 {
+		return errors.New("ERR DB index is out of range")
 	}
+	return nil
 }
 
 func (s *Standalone) Exec(client redis.Connection, cmdLine database.CmdLine) redis.Reply {

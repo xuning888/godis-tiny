@@ -12,4 +12,6 @@ type Connection interface {
 	Write(bytes []byte) (int, error)
 	// GetIndex 获取当前连接需要操作的数据库
 	GetIndex() int
+	// SetIndex 设置当前连接操作的数据库
+	SetIndex(index int)
 }

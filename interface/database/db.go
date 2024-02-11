@@ -16,6 +16,8 @@ type DBEngine interface {
 	Close() error
 	// Init 做必要的初始化工作
 	Init()
+	// CheckIndex checkIndex
+	CheckIndex(index int) error
 }
 
 type DataEntity struct {

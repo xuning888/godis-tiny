@@ -43,3 +43,7 @@ func (c *Connection) Write(bytes []byte) (int, error) {
 func (c *Connection) GetIndex() int {
 	return c.index
 }
+
+func (c *Connection) SetIndex(index int) {
+	c.index = index
+}
