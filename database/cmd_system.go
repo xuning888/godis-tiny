@@ -40,7 +40,7 @@ func flushDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeOkReply()
 }
 
-func init() {
+func registerSystemCmd() {
 	RegisterCmd("ping", ping)
 	RegisterCmd("flushdb", flushDb)
 }

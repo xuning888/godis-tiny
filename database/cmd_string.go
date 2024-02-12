@@ -345,7 +345,7 @@ func execGetDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	}
 }
 
-func init() {
+func registerStringCmd() {
 	RegisterCmd("set", execSet)
 	RegisterCmd("get", execGet)
 	RegisterCmd("getset", execGetSet)

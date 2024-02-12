@@ -91,6 +91,7 @@ func (s *Standalone) Close() error {
 // Init 初始化 standalone，开启一个消费者消费cmdReqQueue中的命令
 func (s *Standalone) Init() {
 	// 开启一个协程来消费req队列
+	initResister()
 	go func() {
 		for cmdReq := range s.reqQueue {
 			s.doExec(cmdReq)

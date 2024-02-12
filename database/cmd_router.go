@@ -1,8 +1,7 @@
 package database
 
 import (
-	"fmt"
-	"log"
+	"g-redis/logger"
 	"strings"
 )
 
@@ -19,7 +18,9 @@ func RegisterCmd(cmdName string, exeFunc ExeFunc) {
 		cmdName: lower,
 		exeFunc: exeFunc,
 	}
-	log.Println(fmt.Sprintf("register command %s", cmd.cmdName))
+	if logger.IsEnabledDebug() {
+		logger.DebugF("register command %s", cmd.cmdName)
+	}
 	cmdTable[lower] = cmd
 }
 
@@ -29,4 +30,11 @@ func getCommand(cmdName string) *command {
 		return cmd
 	}
 	return nil
+}
+
+func initResister() {
+	registerSystemCmd()
+	registerConnCmd()
+	registerKeyCmd()
+	registerStringCmd()
 }

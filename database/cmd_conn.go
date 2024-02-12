@@ -39,7 +39,7 @@ func selectDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeOkReply()
 }
 
-func init() {
+func registerConnCmd() {
 	RegisterCmd("ping", ping)
 	RegisterCmd("select", selectDb)
 }

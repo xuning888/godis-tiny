@@ -123,7 +123,7 @@ func execExpire(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeIntReply(1)
 }
 
-func init() {
+func registerKeyCmd() {
 	RegisterCmd("del", execDel)
 	RegisterCmd("keys", execKeys)
 	RegisterCmd("exists", execExists)
