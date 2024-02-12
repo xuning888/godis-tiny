@@ -11,15 +11,13 @@ var cmdTable = make(map[string]*command)
 type command struct {
 	cmdName string
 	exeFunc ExeFunc
-	arity   int
 }
 
-func RegisterCmd(cmdName string, exeFunc ExeFunc, arity int) {
+func RegisterCmd(cmdName string, exeFunc ExeFunc) {
 	lower := strings.ToLower(cmdName)
 	cmd := &command{
 		cmdName: lower,
 		exeFunc: exeFunc,
-		arity:   arity,
 	}
 	log.Println(fmt.Sprintf("register command %s", cmd.cmdName))
 	cmdTable[lower] = cmd

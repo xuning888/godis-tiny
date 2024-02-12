@@ -7,6 +7,7 @@ import (
 	"g-redis/redis/protocol"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (db *DB) getAsString(key string) ([]byte, protocol.ErrReply) {
@@ -37,18 +38,28 @@ func execGet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 const (
-	upsertPolicy = iota // default
-	insertPolicy        // set nx
-	updatePolicy        // set ex
+	addOrUpdatePolicy = iota // default
+	addPolicy                // set nx
+	updatePolicy             // set ex
 )
 
+// 过期时间
+var unlimitedTTL int64 = 0
+
+// execSet set key value [NX|XX] [EX seconds | PS milliseconds]
 func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 2 || argNum > 4 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
 	args := lint.GetCmdData()
 	key := string(args[0])
 	value := args[1]
-	// 默认是 update 和 insert, 如果 key 已经存在，就覆盖它，如果不在就创建它
-	policy := upsertPolicy
-	if len(args) > 2 {
+	// 默认是 update 和 add, 如果 key 已经存在，就覆盖它，如果不在就创建它
+	policy := addOrUpdatePolicy
+	// 过期时间
+	var ttl = unlimitedTTL
+	if argNum > 2 {
 		for i := 2; i < len(args); i++ {
 			upper := strings.ToUpper(string(args[i]))
 			if "NX" == upper {
@@ -56,15 +67,50 @@ func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 				if policy == updatePolicy {
 					return protocol.MakeSyntaxReply()
 				}
-				policy = insertPolicy
+				policy = addPolicy
 			} else if "XX" == upper {
 				// set key value xx 仅当key存在时插入
-				if policy == insertPolicy {
+				if policy == addPolicy {
 					return protocol.MakeSyntaxReply()
 				}
 				policy = updatePolicy
+			} else if "EX" == upper {
+				// 秒级过期时间
+				if ttl != unlimitedTTL {
+					return protocol.MakeSyntaxReply()
+				}
+				if i+1 > len(args) {
+					return protocol.MakeSyntaxReply()
+				}
+				ttlArg, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+				if err != nil {
+					return protocol.MakeSyntaxReply()
+				}
+				if ttlArg <= 0 {
+					return protocol.MakeStandardErrReply("ERR invalid expire time in set")
+				}
+				ttl = ttlArg * 1000
+				i++
+			} else if "PX" == upper {
+				// 毫秒级过期时间
+				if ttl != unlimitedTTL {
+					return protocol.MakeSyntaxReply()
+				}
+				if i+1 > len(args) {
+					return protocol.MakeSyntaxReply()
+				}
+				ttlArg, err := strconv.ParseInt(string(args[i+1]), 10, 64)
+				if err != nil {
+					return protocol.MakeSyntaxReply()
+				}
+				if ttlArg <= 0 {
+					return protocol.MakeStandardErrReply("ERR invalid expire time in set")
+				}
+				ttl = ttlArg
+				i++
+			} else {
+				return protocol.MakeSyntaxReply()
 			}
-			// TODO 过期时间 EX, PX EXAT, PXAT
 		}
 	}
 	entity := &database.DataEntity{
@@ -73,15 +119,23 @@ func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	var result int
 	db := ctx.GetDb()
 	switch policy {
-	case upsertPolicy:
+	case addOrUpdatePolicy:
 		db.PutEntity(key, entity)
 		result = 1
-	case insertPolicy:
+	case addPolicy:
 		result = db.PutIfAbsent(key, entity)
 	case updatePolicy:
 		result = db.PutIfExists(key, entity)
 	}
 	if result > 0 {
+		if ttl != unlimitedTTL {
+			expireTime := time.Now().Add(time.Duration(ttl) * time.Millisecond)
+			db.Expire(key, expireTime)
+			// TODO aof
+		} else {
+			db.RemoveTTl(key)
+			// TODO aof
+		}
 		return protocol.MakeOkReply()
 	}
 	return protocol.MakeNullBulkReply()
@@ -90,7 +144,7 @@ func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 // execSetNx setnx key value
 func execSetNx(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
-	if argNum < 2 {
+	if argNum < 2 || argNum > 2 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
 	}
 	cmdData := lint.GetCmdData()
@@ -127,7 +181,7 @@ func execStrLen(ctx *CommandContext, lint *cmdLint) redis.Reply {
 // execGetSet getset key value
 func execGetSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
-	if argNum < 2 {
+	if argNum < 2 || argNum > 2 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
 	}
 	cmdData := lint.GetCmdData()
@@ -208,7 +262,7 @@ func execDecr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 // execGetRange getrange key start end
 func execGetRange(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
-	if argNum < 3 {
+	if argNum < 3 || argNum > 3 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
 	}
 	cmdData := lint.GetCmdData()
@@ -292,14 +346,14 @@ func execGetDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func init() {
-	RegisterCmd("set", execSet, -2)
-	RegisterCmd("get", execGet, 1)
-	RegisterCmd("getset", execGetSet, -2)
-	RegisterCmd("incr", execIncr, 1)
-	RegisterCmd("decr", execDecr, 1)
-	RegisterCmd("setnx", execSetNx, -2)
-	RegisterCmd("getrange", execGetRange, -3)
-	RegisterCmd("mget", execMGet, -1)
-	RegisterCmd("strlen", execStrLen, 1)
-	RegisterCmd("getdel", execGetDel, 1)
+	RegisterCmd("set", execSet)
+	RegisterCmd("get", execGet)
+	RegisterCmd("getset", execGetSet)
+	RegisterCmd("incr", execIncr)
+	RegisterCmd("decr", execDecr)
+	RegisterCmd("setnx", execSetNx)
+	RegisterCmd("getrange", execGetRange)
+	RegisterCmd("mget", execMGet)
+	RegisterCmd("strlen", execStrLen)
+	RegisterCmd("getdel", execGetDel)
 }

@@ -12,7 +12,7 @@ func ping(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	if len(args) == 0 {
 		return protocol.MakePongReply()
 	} else if len(args) == 1 {
-		return protocol.MakeSimpleReply(args[0])
+		return protocol.MakeBulkReply(args[0])
 	} else {
 		return protocol.MakeNumberOfArgsErrReply(lint.cmdName)
 	}
@@ -40,6 +40,6 @@ func selectDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func init() {
-	RegisterCmd("ping", ping, 0)
-	RegisterCmd("select", selectDb, 1)
+	RegisterCmd("ping", ping)
+	RegisterCmd("select", selectDb)
 }

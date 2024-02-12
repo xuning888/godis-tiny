@@ -41,6 +41,6 @@ func flushDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func init() {
-	RegisterCmd("ping", ping, 0)
-	RegisterCmd("flushdb", flushDb, 0)
+	RegisterCmd("ping", ping)
+	RegisterCmd("flushdb", flushDb)
 }

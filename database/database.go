@@ -5,8 +5,10 @@ import (
 	"g-redis/datastruct/dict"
 	"g-redis/interface/database"
 	"g-redis/interface/redis"
+	"g-redis/pkg/timewheel"
 	"g-redis/redis/protocol"
 	"strings"
+	"time"
 )
 
 // cmdLint database 内部流转的结构体，包含了客户端发送的命令名称和数据
@@ -70,6 +72,7 @@ type DB struct {
 	index   int
 	dbEngin database.DBEngine
 	data    dict.Dict
+	ttlMap  dict.Dict
 }
 
 // MakeSimpleDb 使用map的实现，无锁结构
@@ -78,6 +81,7 @@ func MakeSimpleDb(index int, dbEngin database.DBEngine) *DB {
 		index:   index,
 		dbEngin: dbEngin,
 		data:    dict.MakeSimpleDict(),
+		ttlMap:  dict.MakeSimpleDict(),
 	}
 }
 
@@ -96,20 +100,8 @@ func (db *DB) Exec(c redis.Connection, lint *cmdLint) redis.Reply {
 		return protocol.MakeStandardErrReply(fmt.Sprintf("ERR unknown command `%s`, with args beginning with: %s",
 			cmdName, strings.Join(lint.cmdString, ", ")))
 	}
-	if !db.validateArray(cmd.arity, lint) {
-		return protocol.MakeNumberOfArgsErrReply(cmdName)
-	}
 	ctx := MakeCommandContext(db, c)
 	return cmd.exeFunc(ctx, lint)
-}
-
-func (db *DB) validateArray(arity int, lint *cmdLint) bool {
-	args := lint.GetCmdData()
-	argNum := len(args)
-	if arity >= 0 {
-		return argNum >= arity
-	}
-	return argNum >= -arity
 }
 
 /* ---- Data Access ----- */
@@ -139,6 +131,9 @@ func (db *DB) PutIfAbsent(key string, entity *database.DataEntity) int {
 // Remove 删除数据
 func (db *DB) Remove(key string) {
 	db.data.Remove(key)
+	db.ttlMap.Remove(key)
+	expireKey := db.getExpireKey(key)
+	timewheel.Cancel(expireKey)
 }
 
 func (db *DB) Removes(keys ...string) (deleted int) {
@@ -171,4 +166,47 @@ func (db *DB) Flush() {
 	if length > 0 {
 		db.data.Clear()
 	}
+}
+
+/* ---- Data TTL ----- */
+
+// Expire 为key设置过期时间
+func (db *DB) Expire(key string, expireTime time.Time) {
+	// 记录key的过期时间
+	db.ttlMap.Put(key, expireTime)
+	// 为任务生成一个名称
+	taskKey := db.getExpireKey(key)
+	timewheel.At(expireTime, taskKey, func() {
+		_, ok := db.ttlMap.Get(key)
+		if !ok {
+			return
+		}
+		db.Remove(key)
+	})
+}
+
+// getExpireKey 拼接一个过期时间的key
+func (db *DB) getExpireKey(key string) string {
+	return fmt.Sprintf("expireKey:%d:%s", db.index, key)
+}
+
+// IsExpired 检查key是否过期了，如果发现过期就从db中移除
+func (db *DB) IsExpired(key string) bool {
+	rawExpireTime, ok := db.ttlMap.Get(key)
+	if !ok {
+		return false
+	}
+	expireTime := rawExpireTime.(time.Time)
+	expired := time.Now().After(expireTime)
+	if expired {
+		db.Remove(key)
+	}
+	return expired
+}
+
+// RemoveTTl 移除ttlMap中的数据，关闭过期检查任务
+func (db *DB) RemoveTTl(key string) {
+	db.ttlMap.Remove(key)
+	expireTaskKey := db.getExpireKey(key)
+	timewheel.Cancel(expireTaskKey)
 }
