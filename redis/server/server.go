@@ -68,8 +68,8 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 			continue
 		}
 		cmdResult := h.dbEngine.ExecV2(client, r.Args)
-		conn := cmdResult.GetConn()
-		_, err := conn.Write(cmdResult.GetReply().ToBytes())
+		c := cmdResult.GetConn()
+		_, err := c.Write(cmdResult.GetReply().ToBytes())
 		if err != nil {
 			h.closeClient(client)
 			logger.ErrorF("write reply to conn has err, close client %v, error: %v", conn.RemoteAddr(), err)
