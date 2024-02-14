@@ -2,9 +2,9 @@ package database
 
 import (
 	"fmt"
-	"g-redis/interface/redis"
-	"g-redis/logger"
-	"g-redis/redis/protocol"
+	"godis-tiny/interface/redis"
+	"godis-tiny/logger"
+	"godis-tiny/redis/protocol"
 	"strings"
 )
 

@@ -1,7 +1,7 @@
 package database
 
 import (
-	"g-redis/logger"
+	"godis-tiny/logger"
 	"strings"
 )
 

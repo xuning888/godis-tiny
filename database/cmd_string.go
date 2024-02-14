@@ -1,10 +1,10 @@
 package database
 
 import (
-	"g-redis/interface/database"
-	"g-redis/interface/redis"
-	"g-redis/pkg/util"
-	"g-redis/redis/protocol"
+	"godis-tiny/interface/database"
+	"godis-tiny/interface/redis"
+	"godis-tiny/pkg/util"
+	"godis-tiny/redis/protocol"
 	"strconv"
 	"strings"
 	"time"

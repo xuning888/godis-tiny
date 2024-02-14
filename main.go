@@ -1,10 +1,10 @@
 package main
 
 import (
-	"g-redis/logger"
-	"g-redis/redis/server"
-	"g-redis/tcp"
 	"github.com/sirupsen/logrus"
+	"godis-tiny/logger"
+	"godis-tiny/redis/server"
+	"godis-tiny/tcp"
 )
 
 func main() {

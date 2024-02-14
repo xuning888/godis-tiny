@@ -3,9 +3,9 @@ package tcp
 import (
 	"context"
 	"errors"
-	"g-redis/interface/tcp"
-	"g-redis/logger"
-	"g-redis/pkg/atomic"
+	"godis-tiny/interface/tcp"
+	"godis-tiny/logger"
+	"godis-tiny/pkg/atomic"
 	"net"
 	"os"
 	"os/signal"

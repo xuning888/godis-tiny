@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"g-redis/interface/redis"
-	"g-redis/redis/protocol"
+	"godis-tiny/interface/redis"
+	"godis-tiny/redis/protocol"
 	"io"
 	"strconv"
 )

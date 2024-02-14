@@ -1,8 +1,8 @@
 package connection
 
 import (
-	"g-redis/interface/redis"
-	"g-redis/pkg/wait"
+	"godis-tiny/interface/redis"
+	"godis-tiny/pkg/wait"
 	"net"
 	"time"
 )

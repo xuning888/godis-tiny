@@ -2,10 +2,10 @@ package database
 
 import (
 	"errors"
-	"g-redis/interface/database"
-	"g-redis/interface/redis"
-	"g-redis/logger"
-	"g-redis/redis/protocol"
+	"godis-tiny/interface/database"
+	"godis-tiny/interface/redis"
+	"godis-tiny/logger"
+	"godis-tiny/redis/protocol"
 	"sync/atomic"
 )
 

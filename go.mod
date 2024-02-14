@@ -1,4 +1,4 @@
-module g-redis
+module godis-tiny
 
 go 1.17
 

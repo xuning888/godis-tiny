@@ -2,12 +2,12 @@ package database
 
 import (
 	"fmt"
-	"g-redis/datastruct/dict"
-	"g-redis/datastruct/ttl"
-	"g-redis/interface/database"
-	"g-redis/interface/redis"
-	"g-redis/logger"
-	"g-redis/redis/protocol"
+	"godis-tiny/datastruct/dict"
+	"godis-tiny/datastruct/ttl"
+	"godis-tiny/interface/database"
+	"godis-tiny/interface/redis"
+	"godis-tiny/logger"
+	"godis-tiny/redis/protocol"
 	"math/rand"
 	"strings"
 	"time"

@@ -3,7 +3,7 @@ package protocol
 import (
 	"bytes"
 	"fmt"
-	"g-redis/interface/redis"
+	"godis-tiny/interface/redis"
 )
 
 var (

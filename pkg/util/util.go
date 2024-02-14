@@ -1,6 +1,6 @@
 package util
 
-import "g-redis/interface/database"
+import "godis-tiny/interface/database"
 
 // MinInt64 输入两个数，返回他们较小的那个
 func MinInt64(a, b int64) int64 {

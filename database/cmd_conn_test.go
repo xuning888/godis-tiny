@@ -1,12 +1,12 @@
 package database
 
 import (
-	"g-redis/interface/database"
-	"g-redis/interface/redis"
-	"g-redis/pkg/util"
-	"g-redis/redis/connection"
-	"g-redis/redis/protocol"
 	"github.com/stretchr/testify/assert"
+	"godis-tiny/interface/database"
+	"godis-tiny/interface/redis"
+	"godis-tiny/pkg/util"
+	"godis-tiny/redis/connection"
+	"godis-tiny/redis/protocol"
 	"testing"
 )
 

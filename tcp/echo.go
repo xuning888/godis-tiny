@@ -3,7 +3,7 @@ package tcp
 import (
 	"bufio"
 	"context"
-	"g-redis/pkg/atomic"
+	"godis-tiny/pkg/atomic"
 	"io"
 	"log"
 	"net"

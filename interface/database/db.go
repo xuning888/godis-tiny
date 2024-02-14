@@ -1,7 +1,7 @@
 package database
 
 import (
-	"g-redis/interface/redis"
+	"godis-tiny/interface/redis"
 )
 
 type CmdLine = [][]byte
