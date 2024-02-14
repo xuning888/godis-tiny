@@ -1,10 +1,13 @@
 package connection
 
 import (
+	"g-redis/interface/redis"
 	"g-redis/pkg/wait"
 	"net"
 	"time"
 )
+
+var _ redis.Connection = &Connection{}
 
 // Connection 简单的对客户端连接的描述
 type Connection struct {
@@ -14,10 +17,15 @@ type Connection struct {
 	wait wait.Wait
 	// index 需要操作的数据库
 	index int
+	inner bool
 }
 
-func NewConn(conn net.Conn) *Connection {
-	return &Connection{conn: conn}
+func (c *Connection) IsInner() bool {
+	return c.inner
+}
+
+func NewConn(conn net.Conn, inner bool) *Connection {
+	return &Connection{conn: conn, inner: inner}
 }
 
 func (c *Connection) Close() error {

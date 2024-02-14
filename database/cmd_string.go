@@ -130,10 +130,10 @@ func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	if result > 0 {
 		if ttl != unlimitedTTL {
 			expireTime := time.Now().Add(time.Duration(ttl) * time.Millisecond)
-			db.Expire(key, expireTime)
+			db.ExpireV1(key, expireTime)
 			// TODO aof
 		} else {
-			db.RemoveTTl(key)
+			db.RemoveTTLV1(key)
 			// TODO aof
 		}
 		return protocol.MakeOkReply()

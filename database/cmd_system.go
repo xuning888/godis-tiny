@@ -1,7 +1,9 @@
 package database
 
 import (
+	"fmt"
 	"g-redis/interface/redis"
+	"g-redis/logger"
 	"g-redis/redis/protocol"
 	"strings"
 )
@@ -40,7 +42,22 @@ func flushDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeOkReply()
 }
 
+func clearTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	conn := ctx.GetConn()
+	if !conn.IsInner() {
+		return protocol.MakeStandardErrReply(fmt.Sprintf("ERR unknown command `%s`, with args beginning with: %s",
+			lint.GetCmdName(), strings.Join(lint.cmdString, ", ")))
+	}
+	// 检查并清理所有数据库的过期key
+	if logger.IsEnabledDebug() {
+		logger.DebugF("ttlops")
+	}
+	ctx.GetDb().ttlChecker.CheckAndClearDb()
+	return protocol.MakeOkReply()
+}
+
 func registerSystemCmd() {
 	RegisterCmd("ping", ping)
 	RegisterCmd("flushdb", flushDb)
+	RegisterCmd("ttlops", clearTTL)
 }

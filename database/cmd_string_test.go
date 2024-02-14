@@ -13,6 +13,8 @@ import (
 )
 
 func TestExeSet(t *testing.T) {
+
+	// TODO 这个单元测试写的不好，有时间重写一下
 	testCases := []struct {
 		serverSupply func() database.DBEngine
 		Name         string
@@ -122,7 +124,7 @@ func TestExeSet(t *testing.T) {
 		},
 	}
 
-	client := connection.NewConn(nil)
+	client := connection.NewConn(nil, false)
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			server := tc.serverSupply()

@@ -35,7 +35,7 @@ func TestPing(t *testing.T) {
 
 	server := MakeStandalone()
 	server.Init()
-	client := connection.NewConn(nil)
+	client := connection.NewConn(nil, false)
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestSelectDb(t *testing.T) {
 
 	server := MakeStandalone()
 	server.Init()
-	client := connection.NewConn(nil)
+	client := connection.NewConn(nil, false)
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {

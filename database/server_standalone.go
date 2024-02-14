@@ -4,6 +4,7 @@ import (
 	"errors"
 	"g-redis/interface/database"
 	"g-redis/interface/redis"
+	"g-redis/logger"
 	"g-redis/redis/protocol"
 	"sync/atomic"
 )
@@ -22,7 +23,7 @@ func MakeStandalone() *Standalone {
 	}
 	dbSet := make([]*atomic.Value, 16)
 	for i := 0; i < 16; i++ {
-		sdb := MakeSimpleDb(i, server)
+		sdb := MakeSimpleDb(i, server, server)
 		holder := &atomic.Value{}
 		holder.Store(sdb)
 		dbSet[i] = holder
@@ -48,6 +49,7 @@ func (s *Standalone) Exec(client redis.Connection, cmdLine database.CmdLine) *da
 
 // doExec 调用db执行命令，将结果放到 resQueue 中
 func (s *Standalone) doExec(req *database.CmdReq) {
+	// 执行命令
 	client := req.GetConn()
 	lint := parseToLint(req.GetCmdLine())
 	index := client.GetIndex()
@@ -56,8 +58,23 @@ func (s *Standalone) doExec(req *database.CmdReq) {
 	if reply != nil {
 		s.resQueue <- database.MakeCmdRes(client, reply)
 	} else {
+		// 每次执行指令的时候都尝试和检查和清理过期的key
+		if lint.GetCmdName() != "ttlops" {
+			if logger.IsEnabledDebug() {
+				logger.DebugF("cmdName: %v, ttlops", lint.cmdName)
+			}
+			db.RandomCheckTTLAndClearV1()
+		}
+		// 执行指令
 		reply = db.Exec(client, lint)
 		s.resQueue <- database.MakeCmdRes(client, reply)
+	}
+}
+
+func (s *Standalone) CheckAndClearDb() {
+	for _, dbHolder := range s.dbSet {
+		db := dbHolder.Load().(*DB)
+		db.RandomCheckTTLAndClearV1()
 	}
 }
 

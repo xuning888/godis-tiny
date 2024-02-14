@@ -7,6 +7,7 @@ import (
 	"g-redis/interface/database"
 	"g-redis/logger"
 	"g-redis/pkg/atomic"
+	"g-redis/pkg/util"
 	"g-redis/redis/connection"
 	"g-redis/redis/parser"
 	"g-redis/redis/protocol"
@@ -14,6 +15,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Handler struct {
@@ -22,15 +24,23 @@ type Handler struct {
 	// closing 标记服务是否启动
 	closing  atomic.Boolean
 	dbEngine database.DBEngine
+	// 定时发送清理过期key的信号
+	ttlTicker      *time.Ticker
+	stopTTLChannel chan byte
 }
 
 func MakeHandler() *Handler {
 	dbEngin := database2.MakeStandalone()
 	dbEngin.Init()
-	return &Handler{
-		activate: sync.Map{},
-		dbEngine: dbEngin,
+	handler := &Handler{
+		activate:  sync.Map{},
+		dbEngine:  dbEngin,
+		ttlTicker: time.NewTicker(time.Second),
 	}
+	go func() {
+		handler.startTTLHandle()
+	}()
+	return handler
 }
 
 func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
@@ -38,7 +48,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 		_ = conn.Close()
 		return
 	}
-	client := connection.NewConn(conn)
+	client := connection.NewConn(conn, false)
 	h.activate.Store(client, struct{}{})
 	ch := parser.ParseFromStream(conn)
 	for payload := range ch {
@@ -92,7 +102,32 @@ func (h *Handler) Close() error {
 		_ = client.Close()
 		return true
 	})
+	h.stopTTLChannel <- 0
+	close(h.stopTTLChannel)
 	// 关闭存储
 	_ = h.dbEngine.Close()
 	return nil
+}
+
+func (h *Handler) startTTLHandle() {
+	for {
+		select {
+		case <-h.ttlTicker.C:
+			h.doTTLHandle()
+		case <-h.stopTTLChannel:
+			if logger.IsEnabledDebug() {
+				logger.DebugF("stop ttl check Handle")
+			}
+			return
+		}
+	}
+}
+
+var systemConn = connection.NewConn(nil, true)
+
+func (h *Handler) doTTLHandle() {
+	if logger.IsEnabledDebug() {
+		logger.DebugF("doTTLHandle")
+	}
+	h.dbEngine.Exec(systemConn, util.ToCmdLine("ttlops"))
 }

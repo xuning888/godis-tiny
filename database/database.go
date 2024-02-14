@@ -3,10 +3,12 @@ package database
 import (
 	"fmt"
 	"g-redis/datastruct/dict"
+	"g-redis/datastruct/ttl"
 	"g-redis/interface/database"
 	"g-redis/interface/redis"
-	"g-redis/pkg/timewheel"
+	"g-redis/logger"
 	"g-redis/redis/protocol"
+	"math/rand"
 	"strings"
 	"time"
 )
@@ -71,27 +73,30 @@ type ExeFunc func(cmdCtx *CommandContext, cmdLint *cmdLint) redis.Reply
 type DB struct {
 	index        int
 	indexChecker database.IndexChecker
+	ttlChecker   database.TTLChecker
 	data         dict.Dict
-	ttlMap       dict.Dict
+	ttlCache     ttl.Cache
 }
 
 // MakeSimpleDb 使用map的实现，无锁结构
-func MakeSimpleDb(index int, indexChecker database.IndexChecker) *DB {
+func MakeSimpleDb(index int, indexChecker database.IndexChecker, ttlChecker database.TTLChecker) *DB {
 	return &DB{
 		index:        index,
 		indexChecker: indexChecker,
+		ttlChecker:   ttlChecker,
 		data:         dict.MakeSimpleDict(),
-		ttlMap:       dict.MakeSimpleDict(),
+		ttlCache:     ttl.MakeSimple(),
 	}
 }
 
 // MakeSimpleSync 使用sync.Map的实现
-func MakeSimpleSync(index int, checker database.IndexChecker) *DB {
+func MakeSimpleSync(index int, checker database.IndexChecker, ttlChecker database.TTLChecker) *DB {
 	return &DB{
 		index:        index,
 		indexChecker: checker,
+		ttlChecker:   ttlChecker,
 		data:         dict.MakeSimpleSync(),
-		ttlMap:       dict.MakeSimpleSync(),
+		ttlCache:     ttl.MakeSimple(),
 	}
 }
 
@@ -133,9 +138,7 @@ func (db *DB) PutIfAbsent(key string, entity *database.DataEntity) int {
 // Remove 删除数据
 func (db *DB) Remove(key string) {
 	db.data.Remove(key)
-	db.ttlMap.Remove(key)
-	expireKey := db.getExpireKey(key)
-	timewheel.Cancel(expireKey)
+	db.ttlCache.Remove(key)
 }
 
 func (db *DB) Removes(keys ...string) (deleted int) {
@@ -172,45 +175,75 @@ func (db *DB) Flush() {
 
 /* ---- Data TTL ----- */
 
-// Expire 为key设置过期时间
-func (db *DB) Expire(key string, expireTime time.Time) {
-	// 记录key的过期时间
-	db.ttlMap.Put(key, expireTime)
-	// 为任务生成一个名称
-	taskKey := db.getExpireKey(key)
-	timewheel.At(expireTime, taskKey, func() {
-		_, ok := db.ttlMap.Get(key)
-		if !ok {
-			return
+// ExpireV1 为key设置过期时间
+func (db *DB) ExpireV1(key string, expireTime time.Time) {
+	db.ttlCache.Expire(key, expireTime)
+}
+
+// IsExpiredV1 返回指定key是否过期，如果key 不存在返回 false
+func (db *DB) IsExpiredV1(key string) (expired bool, exists bool) {
+	return db.ttlCache.IsExpired(key)
+}
+
+// RemoveTTLV1 删除指定 key 的 ttl
+func (db *DB) RemoveTTLV1(key string) {
+	db.ttlCache.Remove(key)
+}
+
+func (db *DB) ExpiredAt(key string) time.Time {
+	return db.ttlCache.ExpireAt(key)
+}
+
+// RandomCheckTTLAndClear 随机检查一组key的过期时间，如果key已经过期了，那么清理key
+func (db *DB) RandomCheckTTLAndClear() {
+	if db.data.Len() == 0 {
+		return
+	}
+	randLimit := rand.Intn(db.data.Len() + 1)
+	keys := db.data.RandomKeys(randLimit)
+	if len(keys) == 0 {
+		return
+	}
+	for _, key := range keys {
+		expired, exists := db.ttlCache.IsExpired(key)
+		if !exists {
+			if logger.IsEnabledDebug() {
+				logger.DebugF("ttl check, db%d key: %s, 没有设置过期时间", db.index, key)
+			}
+			continue
 		}
-		db.Remove(key)
-	})
-}
-
-// getExpireKey 拼接一个过期时间的key
-func (db *DB) getExpireKey(key string) string {
-	return fmt.Sprintf("expireKey:%d:%s", db.index, key)
-}
-
-// IsExpired 检查key是否过期了，如果发现过期就从db中移除
-func (db *DB) IsExpired(key string) bool {
-	rawExpireTime, ok := db.ttlMap.Get(key)
-	if !ok {
-		return false
+		if expired {
+			if logger.IsEnabledDebug() {
+				logger.DebugF("ttl check, db%d key: %s, 过期了", db.index, key)
+			}
+			db.data.Remove(key)
+			db.ttlCache.Remove(key)
+		}
 	}
-	expireTime := rawExpireTime.(time.Time)
-	expired := time.Now().After(expireTime)
-	if expired {
-		db.Remove(key)
-	}
-	return expired
 }
 
-// RemoveTTl 移除ttlMap中的数据，关闭过期检查任务
-func (db *DB) RemoveTTl(key string) {
-	result := db.ttlMap.Remove(key)
-	if result > 0 {
-		expireTaskKey := db.getExpireKey(key)
-		timewheel.Cancel(expireTaskKey)
+// RandomCheckTTLAndClearV1 随机检查一组key的过期时间，如果key已经过期了，那么清理key。
+// 有点是清理的更加及时
+// 缺点是使用了Peek方法，暴露了底层的实现细节是PQ
+func (db *DB) RandomCheckTTLAndClearV1() {
+	if db.data.Len() == 0 {
+		return
+	}
+	randLimit := rand.Intn(db.data.Len() + 1)
+	for i := 0; i < randLimit; i++ {
+		item := db.ttlCache.Peek()
+		if item == nil {
+			break
+		}
+		expired, _ := db.ttlCache.IsExpired(item.Key)
+		if expired {
+			if logger.IsEnabledDebug() {
+				logger.DebugF("ttl check, db%d key: %s, 过期了", db.index, item.Key)
+			}
+			db.data.Remove(item.Key)
+			db.ttlCache.Remove(item.Key)
+		} else {
+			break
+		}
 	}
 }

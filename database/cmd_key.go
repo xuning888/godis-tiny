@@ -91,11 +91,18 @@ func execTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return protocol.MakeIntReply(-2)
 	}
 	// 没有设置过期时间返回-1
-	rawExpireTime, ok := db.ttlMap.Get(key)
-	if !ok {
+	expired, exists := db.IsExpiredV1(key)
+	if !exists {
 		return protocol.MakeIntReply(-1)
 	}
-	expireTime, _ := rawExpireTime.(time.Time)
+
+	// 如果过期了，删除key,并且返回-1
+	if expired {
+		db.Remove(key)
+		return protocol.MakeIntReply(-1)
+	}
+	// 如果没有过期，计算ttl时间
+	expireTime := db.ExpiredAt(key)
 	// ttl
 	remainingTime := expireTime.Sub(time.Now())
 	return protocol.MakeIntReply(int64(remainingTime / time.Second))
@@ -119,7 +126,7 @@ func execExpire(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return protocol.MakeIntReply(0)
 	}
 	expireTime := time.Now().Add(time.Duration(ttl) * time.Second)
-	ctx.GetDb().Expire(key, expireTime)
+	ctx.GetDb().ExpireV1(key, expireTime)
 	return protocol.MakeIntReply(1)
 }
 

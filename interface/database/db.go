@@ -21,6 +21,10 @@ type IndexChecker interface {
 	CheckIndex(index int) error
 }
 
+type TTLChecker interface {
+	CheckAndClearDb()
+}
+
 type DataEntity struct {
 	Data interface{}
 }

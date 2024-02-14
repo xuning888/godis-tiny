@@ -14,4 +14,6 @@ type Connection interface {
 	GetIndex() int
 	// SetIndex 设置当前连接操作的数据库
 	SetIndex(index int)
+	// IsInner 是否是内建的客户端
+	IsInner() bool
 }
