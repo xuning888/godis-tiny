@@ -67,7 +67,7 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 		if !ok {
 			continue
 		}
-		cmdResult := h.dbEngine.ExecV2(client, r.Args)
+		cmdResult := h.dbEngine.Exec(client, r.Args)
 		c := cmdResult.GetConn()
 		_, err := c.Write(cmdResult.GetReply().ToBytes())
 		if err != nil {

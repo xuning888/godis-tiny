@@ -69,27 +69,29 @@ type ExeFunc func(cmdCtx *CommandContext, cmdLint *cmdLint) redis.Reply
 
 // DB 存储数据的DB
 type DB struct {
-	index   int
-	dbEngin database.DBEngine
-	data    dict.Dict
-	ttlMap  dict.Dict
+	index        int
+	indexChecker database.IndexChecker
+	data         dict.Dict
+	ttlMap       dict.Dict
 }
 
 // MakeSimpleDb 使用map的实现，无锁结构
-func MakeSimpleDb(index int, dbEngin database.DBEngine) *DB {
+func MakeSimpleDb(index int, indexChecker database.IndexChecker) *DB {
 	return &DB{
-		index:   index,
-		dbEngin: dbEngin,
-		data:    dict.MakeSimpleDict(),
-		ttlMap:  dict.MakeSimpleDict(),
+		index:        index,
+		indexChecker: indexChecker,
+		data:         dict.MakeSimpleDict(),
+		ttlMap:       dict.MakeSimpleDict(),
 	}
 }
 
 // MakeSimpleSync 使用sync.Map的实现
-func MakeSimpleSync(index int) *DB {
+func MakeSimpleSync(index int, checker database.IndexChecker) *DB {
 	return &DB{
-		index: index,
-		data:  dict.MakeSimpleSync(),
+		index:        index,
+		indexChecker: checker,
+		data:         dict.MakeSimpleSync(),
+		ttlMap:       dict.MakeSimpleSync(),
 	}
 }
 
@@ -206,7 +208,9 @@ func (db *DB) IsExpired(key string) bool {
 
 // RemoveTTl 移除ttlMap中的数据，关闭过期检查任务
 func (db *DB) RemoveTTl(key string) {
-	db.ttlMap.Remove(key)
-	expireTaskKey := db.getExpireKey(key)
-	timewheel.Cancel(expireTaskKey)
+	result := db.ttlMap.Remove(key)
+	if result > 0 {
+		expireTaskKey := db.getExpireKey(key)
+		timewheel.Cancel(expireTaskKey)
+	}
 }

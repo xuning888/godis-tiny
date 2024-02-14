@@ -8,14 +8,15 @@ type CmdLine = [][]byte
 
 // DBEngine 存储引擎的抽象
 type DBEngine interface {
-	// Exec client 上的命令
-	Exec(client redis.Connection, cmdLine CmdLine) redis.Reply
-	// ExecV2 client 上的命令，使用 channel 来保证线程安全，缺点就是无法读并发
-	ExecV2(client redis.Connection, cmdLine CmdLine) *CmdRes
+	// Exec 执行client 上的命令，使用 channel 来保证线程安全，缺点就是无法读并发
+	Exec(client redis.Connection, cmdLine CmdLine) *CmdRes
 	// Close 关闭
 	Close() error
 	// Init 做必要的初始化工作
 	Init()
+}
+
+type IndexChecker interface {
 	// CheckIndex checkIndex
 	CheckIndex(index int) error
 }

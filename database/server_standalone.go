@@ -38,18 +38,8 @@ func (s *Standalone) CheckIndex(index int) error {
 	return nil
 }
 
-func (s *Standalone) Exec(client redis.Connection, cmdLine database.CmdLine) redis.Reply {
-	lint := parseToLint(cmdLine)
-	index := client.GetIndex()
-	db, reply := s.selectDb(index)
-	if reply != nil {
-		return reply
-	}
-	return db.Exec(client, lint)
-}
-
-// ExecV2 使用reqChannel 和 resChannel 来保证命令排队执行
-func (s *Standalone) ExecV2(client redis.Connection, cmdLine database.CmdLine) *database.CmdRes {
+// Exec 使用reqChannel 和 resChannel 来保证命令排队执行
+func (s *Standalone) Exec(client redis.Connection, cmdLine database.CmdLine) *database.CmdRes {
 	cmdReq := database.MakeCmdReq(client, cmdLine)
 	s.reqQueue <- cmdReq
 	cmdRes := <-s.resQueue

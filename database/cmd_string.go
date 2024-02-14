@@ -44,7 +44,7 @@ const (
 )
 
 // 过期时间
-var unlimitedTTL int64 = 0
+const unlimitedTTL int64 = 0
 
 // execSet set key value [NX|XX] [EX seconds | PS milliseconds]
 func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
