@@ -18,8 +18,8 @@ type Standalone struct {
 
 func MakeStandalone() *Standalone {
 	server := &Standalone{
-		resQueue: make(chan *database.CmdRes, 1000),
-		reqQueue: make(chan *database.CmdReq, 1000),
+		resQueue: make(chan *database.CmdRes, 100000),
+		reqQueue: make(chan *database.CmdReq, 100000),
 	}
 	dbSet := make([]*atomic.Value, 16)
 	for i := 0; i < 16; i++ {

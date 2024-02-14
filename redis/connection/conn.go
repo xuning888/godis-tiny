@@ -1,6 +1,7 @@
 package connection
 
 import (
+	"errors"
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/wait"
 	"net"
@@ -45,7 +46,10 @@ func (c *Connection) Write(bytes []byte) (int, error) {
 	defer func() {
 		c.wait.Done()
 	}()
-	return c.conn.Write(bytes)
+	if c.conn != nil {
+		return c.conn.Write(bytes)
+	}
+	return 0, errors.New("conn is null")
 }
 
 func (c *Connection) GetIndex() int {

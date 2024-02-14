@@ -44,7 +44,9 @@ func listenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 			logger.InfoF("accept conn has error: %v", err)
 			continue
 		}
-		logger.InfoF("accept conn:%s", conn.RemoteAddr().String())
+		if logger.IsEnabledDebug() {
+			logger.DebugF("accept conn:%s", conn.RemoteAddr().String())
+		}
 		waitDown.Add(1)
 		// 开启新的 goroutine 处理该连接
 		go func() {
