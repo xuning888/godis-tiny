@@ -1,22 +1,21 @@
 package main
 
 import (
-	"github.com/sirupsen/logrus"
-	"godis-tiny/logger"
-	"godis-tiny/redis/server"
-	"godis-tiny/tcp"
+	"github.com/bytedance/gopkg/util/logger"
+	"godis-tiny/tcp/mnetpoll"
 )
 
 func main() {
-	logger.Configure(&logger.Configuration{
+	logger.SetLevel(logger.LevelDebug)
+	/*	logger.Configure(&logger.Configuration{
 		Level:         logrus.DebugLevel,
 		TimeFormat:    "2006-01-02 15:04:05.000",
 		LogPath:       "logs",
 		EnableFileLog: false,
-	})
-	handler := server.MakeHandler()
-	err := tcp.ListenAndServeWithSignal(":8080", handler)
-	if err != nil {
+	})*/
+	server := mnetpoll.NewNetPollServer()
+	if err := server.Serve(":8080"); err != nil {
+		logger.Errorf("start server has error: %v", err)
 		panic(err)
 	}
 }

@@ -2,9 +2,9 @@ package database
 
 import (
 	"errors"
+	"github.com/bytedance/gopkg/util/logger"
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
-	"godis-tiny/logger"
 	"godis-tiny/redis/protocol"
 	"sync/atomic"
 )
@@ -60,9 +60,7 @@ func (s *Standalone) doExec(req *database.CmdReq) {
 	} else {
 		// 每次执行指令的时候都尝试和检查和清理过期的key
 		if lint.GetCmdName() != "ttlops" {
-			if logger.IsEnabledDebug() {
-				logger.DebugF("cmdName: %v, ttlops", lint.cmdName)
-			}
+			logger.Debugf("cmdName: %v, ttlops", lint.cmdName)
 			db.RandomCheckTTLAndClearV1()
 		}
 		// 执行指令
@@ -73,8 +71,11 @@ func (s *Standalone) doExec(req *database.CmdReq) {
 
 func (s *Standalone) CheckAndClearDb() {
 	for _, dbHolder := range s.dbSet {
-		db := dbHolder.Load().(*DB)
-		db.RandomCheckTTLAndClearV1()
+		val := dbHolder.Load()
+		if val != nil {
+			db := dbHolder.Load().(*DB)
+			db.RandomCheckTTLAndClearV1()
+		}
 	}
 }
 

@@ -1,10 +1,10 @@
-package tcp
+package simple
 
 import (
 	"context"
 	"errors"
+	"github.com/bytedance/gopkg/util/logger"
 	"godis-tiny/interface/tcp"
-	"godis-tiny/logger"
 	"godis-tiny/pkg/atomic"
 	"net"
 	"os"
@@ -38,15 +38,13 @@ func listenAndServe(listener net.Listener, handler tcp.Handler, closeChan <-chan
 			// 检查是否因为监听器已关闭导致的错误
 			var netErr net.Error
 			if errors.As(err, &netErr) && !netErr.Timeout() {
-				logger.InfoF("listener is closed, exiting accept loop: %v", err)
+				logger.Infof("listener is closed, exiting accept loop: %v", err)
 				break
 			}
-			logger.InfoF("accept conn has error: %v", err)
+			logger.Infof("accept conn has error: %v", err)
 			continue
 		}
-		if logger.IsEnabledDebug() {
-			logger.DebugF("accept conn:%s", conn.RemoteAddr().String())
-		}
+		logger.Debugf("accept conn:%s", conn.RemoteAddr().String())
 		waitDown.Add(1)
 		// 开启新的 goroutine 处理该连接
 		go func() {
@@ -64,16 +62,16 @@ func shutdown(listener net.Listener, handler tcp.Handler) {
 		return
 	}
 	closing.Set(true)
-	logger.InfoF("shutting down....")
+	logger.Infof("shutting down....")
 	// 关闭 tcp listener, listener.Accept() 会立刻返回 io.EOF
 	err := listener.Close()
 	if err != nil {
-		logger.ErrorF("shut down listener has error: %v", err)
+		logger.Errorf("shut down listener has error: %v", err)
 	}
 	// 关闭应用服务器
 	err = handler.Close()
 	if err != nil {
-		logger.ErrorF("shut down server has error: %v", err)
+		logger.Errorf("shut down server has error: %v", err)
 	}
 }
 
@@ -95,7 +93,7 @@ func ListenAndServeWithSignal(address string, handler tcp.Handler) error {
 	if err != nil {
 		return err
 	}
-	logger.InfoF("bind: %s, start listening...", address)
+	logger.Infof("bind: %s, start listening...", address)
 	listenAndServe(listener, handler, closeChan)
 	return nil
 }

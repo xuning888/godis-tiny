@@ -2,11 +2,11 @@ package database
 
 import (
 	"fmt"
+	"github.com/bytedance/gopkg/util/logger"
 	"godis-tiny/datastruct/dict"
 	"godis-tiny/datastruct/ttl"
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
-	"godis-tiny/logger"
 	"godis-tiny/redis/protocol"
 	"math/rand"
 	"strings"
@@ -207,24 +207,19 @@ func (db *DB) RandomCheckTTLAndClear() {
 	for _, key := range keys {
 		expired, exists := db.ttlCache.IsExpired(key)
 		if !exists {
-			if logger.IsEnabledDebug() {
-				logger.DebugF("ttl check, db%d key: %s, 没有设置过期时间", db.index, key)
-			}
+			logger.Debugf("ttl check, db%d key: %s, 没有设置过期时间", db.index, key)
 			continue
 		}
 		if expired {
-			if logger.IsEnabledDebug() {
-				logger.DebugF("ttl check, db%d key: %s, 过期了", db.index, key)
-			}
-			db.data.Remove(key)
-			db.ttlCache.Remove(key)
+			logger.Debugf("ttl check, db%d key: %s, 过期了", db.index, key)
+			db.Remove(key)
 		}
 	}
 }
 
 // RandomCheckTTLAndClearV1 随机检查一组key的过期时间，如果key已经过期了，那么清理key。
-// 有点是清理的更加及时
-// 缺点是使用了Peek方法，暴露了底层的实现细节是PQ
+// 优点: 清理的更加及时
+// 缺点: 使用了Peek方法，暴露了底层的实现细节是PQ
 func (db *DB) RandomCheckTTLAndClearV1() {
 	if db.data.Len() == 0 {
 		return
@@ -237,11 +232,8 @@ func (db *DB) RandomCheckTTLAndClearV1() {
 		}
 		expired, _ := db.ttlCache.IsExpired(item.Key)
 		if expired {
-			if logger.IsEnabledDebug() {
-				logger.DebugF("ttl check, db%d key: %s, 过期了", db.index, item.Key)
-			}
-			db.data.Remove(item.Key)
-			db.ttlCache.Remove(item.Key)
+			logger.Debugf("ttl check, db%d key: %s, 过期了", db.index, item.Key)
+			db.Remove(item.Key)
 		} else {
 			break
 		}

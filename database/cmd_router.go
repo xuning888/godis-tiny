@@ -1,7 +1,7 @@
 package database
 
 import (
-	"godis-tiny/logger"
+	"github.com/bytedance/gopkg/util/logger"
 	"strings"
 )
 
@@ -18,9 +18,7 @@ func RegisterCmd(cmdName string, exeFunc ExeFunc) {
 		cmdName: lower,
 		exeFunc: exeFunc,
 	}
-	if logger.IsEnabledDebug() {
-		logger.DebugF("register command %s", cmd.cmdName)
-	}
+	logger.Debugf("register command %s", cmd.cmdName)
 	cmdTable[lower] = cmd
 }
 

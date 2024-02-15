@@ -1,12 +1,13 @@
-package parser
+package mnetpoll
 
 import (
-	"bufio"
 	"bytes"
+	"context"
 	"errors"
+	"github.com/bytedance/gopkg/util/logger"
+	"github.com/cloudwego/netpoll"
 	"godis-tiny/interface/redis"
 	"godis-tiny/redis/protocol"
-	"io"
 	"strconv"
 )
 
@@ -15,16 +16,15 @@ type Payload struct {
 	Error error
 }
 
-func ParseFromStream(reader io.Reader) chan *Payload {
+func ParseFromStream(ctx context.Context, reader netpoll.Reader) chan *Payload {
 	ch := make(chan *Payload)
-	go parse0(reader, ch)
+	go parse0(ctx, reader, ch)
 	return ch
 }
 
-func parse0(reader io.Reader, ch chan<- *Payload) {
-	bufReader := bufio.NewReader(reader)
+func parse0(ctx context.Context, reader netpoll.Reader, ch chan<- *Payload) {
 	for {
-		line, err := bufReader.ReadBytes('\n')
+		line, err := reader.Until('\n')
 		if err != nil {
 			ch <- &Payload{Error: err}
 			close(ch)
@@ -54,14 +54,14 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 			}
 			ch <- &Payload{Data: protocol.MakeIntReply(value)}
 		case '$':
-			err = parseBulkString(line, bufReader, ch)
+			err = parseBulkString(line, reader, ch)
 			if err != nil {
 				ch <- &Payload{Error: err}
 				close(ch)
 				return
 			}
 		case '*':
-			err := parseArray(line, bufReader, ch)
+			err := parseArray(line, reader, ch)
 			if err != nil {
 				ch <- &Payload{Error: err}
 				close(ch)
@@ -76,7 +76,7 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 	}
 }
 
-func parseBulkString(header []byte, reader *bufio.Reader, ch chan<- *Payload) error {
+func parseBulkString(header []byte, reader netpoll.Reader, ch chan<- *Payload) error {
 	strLen, err := strconv.ParseInt(string(header[1:]), 10, 64)
 	if err != nil || strLen < -1 {
 		protocolError(ch, "illegal bulk string header: "+string(header))
@@ -87,8 +87,7 @@ func parseBulkString(header []byte, reader *bufio.Reader, ch chan<- *Payload) er
 		}
 		return nil
 	} else {
-		body := make([]byte, strLen+2)
-		_, err = io.ReadFull(reader, body)
+		body, err := reader.Next(int(strLen + 2))
 		if err != nil {
 			return err
 		}
@@ -99,7 +98,7 @@ func parseBulkString(header []byte, reader *bufio.Reader, ch chan<- *Payload) er
 	}
 }
 
-func parseArray(header []byte, reader *bufio.Reader, ch chan<- *Payload) error {
+func parseArray(header []byte, reader netpoll.Reader, ch chan<- *Payload) error {
 	nStrs, err := strconv.ParseInt(string(header[1:]), 10, 64)
 	if err != nil || nStrs < 0 {
 		protocolError(ch, "illegal array header "+string(header[1:]))
@@ -113,7 +112,7 @@ func parseArray(header []byte, reader *bufio.Reader, ch chan<- *Payload) error {
 	lines := make([][]byte, 0, nStrs)
 	for i := int64(0); i < nStrs; i++ {
 		var line []byte
-		line, err = reader.ReadBytes('\n')
+		line, err = reader.Until('\n')
 		if err != nil {
 			return err
 		}
@@ -129,8 +128,7 @@ func parseArray(header []byte, reader *bufio.Reader, ch chan<- *Payload) error {
 		} else if strLen == -1 {
 			lines = append(lines, []byte{})
 		} else {
-			body := make([]byte, strLen+2)
-			_, err := io.ReadFull(reader, body)
+			body, err := reader.Next(int(strLen + 2))
 			if err != nil {
 				return err
 			}
@@ -146,4 +144,15 @@ func parseArray(header []byte, reader *bufio.Reader, ch chan<- *Payload) error {
 func protocolError(ch chan<- *Payload, msg string) {
 	err := errors.New("protocol error: " + msg)
 	ch <- &Payload{Error: err}
+}
+
+func stopOnError(ctx context.Context, reader netpoll.Reader, ch chan<- *Payload, err error) {
+	defer func() {
+		releaseErr := reader.Release()
+		if releaseErr != nil {
+			logger.Errorf("parser stop on error, reader release has error: %v", err)
+		}
+	}()
+	ch <- &Payload{Error: err}
+	close(ch)
 }

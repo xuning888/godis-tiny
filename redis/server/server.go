@@ -3,13 +3,13 @@ package server
 import (
 	"context"
 	"errors"
+	"github.com/bytedance/gopkg/util/logger"
 	database2 "godis-tiny/database"
 	"godis-tiny/interface/database"
-	"godis-tiny/logger"
 	"godis-tiny/pkg/atomic"
 	"godis-tiny/pkg/util"
-	"godis-tiny/redis/connection"
-	"godis-tiny/redis/parser"
+	simple2 "godis-tiny/redis/connection/simple"
+	"godis-tiny/redis/parser/simple"
 	"godis-tiny/redis/protocol"
 	"io"
 	"net"
@@ -48,9 +48,9 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 		_ = conn.Close()
 		return
 	}
-	client := connection.NewConn(conn, false)
+	client := simple2.NewConn(conn, false)
 	h.activate.Store(client, struct{}{})
-	ch := parser.ParseFromStream(conn)
+	ch := simple.ParseFromStream(conn)
 	for payload := range ch {
 		if payload.Error != nil {
 			if payload.Error == io.EOF ||
@@ -58,16 +58,14 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 				strings.Contains(payload.Error.Error(), "use of closed network connection") {
 				// connection closed
 				h.closeClient(client)
-				if logger.IsEnabledDebug() {
-					logger.DebugF("connection closed: %v", conn.RemoteAddr())
-				}
+				logger.Debugf("connection closed: %v", conn.RemoteAddr())
 				return
 			}
 			errReply := protocol.MakeStandardErrReply(payload.Error.Error())
 			_, err := client.Write(errReply.ToBytes())
 			if err != nil {
 				h.closeClient(client)
-				logger.ErrorF("connection closed: %s, %v", client.RemoteAddr().String(), err)
+				logger.Errorf("connection closed: %s, %v", client.RemoteAddr().String(), err)
 				return
 			}
 			continue
@@ -84,12 +82,12 @@ func (h *Handler) Handle(ctx context.Context, conn net.Conn) {
 		_, err := c.Write(cmdResult.GetReply().ToBytes())
 		if err != nil {
 			h.closeClient(client)
-			logger.ErrorF("write reply to conn has err, close client %v, error: %v", conn.RemoteAddr(), err)
+			logger.Errorf("write reply to conn has err, close client %v, error: %v", conn.RemoteAddr(), err)
 		}
 	}
 }
 
-func (h *Handler) closeClient(client *connection.Connection) {
+func (h *Handler) closeClient(client *simple2.Connection) {
 	_ = client.Close()
 	h.activate.Delete(client)
 }
@@ -100,7 +98,7 @@ func (h *Handler) Close() error {
 	}
 	h.closing.Set(true)
 	h.activate.Range(func(key, value interface{}) bool {
-		client := key.(*connection.Connection)
+		client := key.(*simple2.Connection)
 		_ = client.Close()
 		return true
 	})
@@ -117,19 +115,15 @@ func (h *Handler) startTTLHandle() {
 		case <-h.ttlTicker.C:
 			h.doTTLHandle()
 		case <-h.stopTTLChannel:
-			if logger.IsEnabledDebug() {
-				logger.DebugF("stop ttl check Handle")
-			}
+			logger.Debug("stop ttl check Handle")
 			return
 		}
 	}
 }
 
-var systemConn = connection.NewConn(nil, true)
+var systemConn = simple2.NewConn(nil, true)
 
 func (h *Handler) doTTLHandle() {
-	if logger.IsEnabledDebug() {
-		logger.DebugF("doTTLHandle")
-	}
+	logger.Debug("doTTLHandle")
 	h.dbEngine.Exec(systemConn, util.ToCmdLine("ttlops"))
 }
