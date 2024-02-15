@@ -38,34 +38,36 @@ func parse0(ctx context.Context, conn netpoll.Connection, ch chan<- *Payload) {
 		if length <= 2 || line[length-2] != '\r' {
 			continue
 		}
+		copyLine := make([]byte, length)
+		copy(copyLine, line)
 		// 去除末尾的 \r\n
-		line = bytes.TrimSuffix(line, []byte{'\r', '\n'})
-		cmd := line[0]
+		copyLine = bytes.TrimSuffix(copyLine, []byte{'\r', '\n'})
+		cmd := copyLine[0]
 		switch cmd {
 		case '+':
 			ch <- &Payload{
-				Data: protocol.MakeSimpleReply(line[1:]),
+				Data: protocol.MakeSimpleReply(copyLine[1:]),
 			}
 		case '-':
 			ch <- &Payload{
-				Data: protocol.MakeStandardErrReply(string(line[1:])),
+				Data: protocol.MakeStandardErrReply(string(copyLine[1:])),
 			}
 		case ':':
-			value, err := strconv.ParseInt(string(line[1:]), 10, 64)
+			value, err := strconv.ParseInt(string(copyLine[1:]), 10, 64)
 			if err != nil {
-				protocolError(ch, "illegal number "+string(line[1:]))
+				protocolError(ch, "illegal number "+string(copyLine[1:]))
 				continue
 			}
 			ch <- &Payload{Data: protocol.MakeIntReply(value)}
 		case '$':
-			err = parseBulkString(line, reader, ch)
+			err = parseBulkString(copyLine, reader, ch)
 			if err != nil {
 				ch <- &Payload{Error: err}
 				close(ch)
 				return
 			}
 		case '*':
-			err = parseArray(line, reader, ch)
+			err = parseArray(copyLine, reader, ch)
 			if err != nil {
 				ch <- &Payload{Error: err}
 				close(ch)
@@ -98,8 +100,10 @@ func parseBulkString(header []byte, reader netpoll.Reader, ch chan<- *Payload) e
 			return err
 		}
 		// \r\n 不属于数据的部分, 所以要把 \r\n 干掉， body[:len(body)-2]
+		copyBody := make([]byte, len(body)-2)
+		copy(copyBody, body[:len(body)-2])
 		ch <- &Payload{
-			Data: protocol.MakeBulkReply(body[:len(body)-2]),
+			Data: protocol.MakeBulkReply(copyBody),
 		}
 		return nil
 	}
@@ -128,10 +132,12 @@ func parseArray(header []byte, reader netpoll.Reader, ch chan<- *Payload) error 
 			protocolError(ch, "illegal bulk string header "+string(line))
 			break
 		}
+		copyLine := make([]byte, length)
+		copy(copyLine, line)
 		var strLen int64
-		strLen, err = strconv.ParseInt(string(line[1:length-2]), 10, 64)
+		strLen, err = strconv.ParseInt(string(copyLine[1:length-2]), 10, 64)
 		if err != nil || strLen < -1 {
-			protocolError(ch, "illegal bulk string length "+string(line))
+			protocolError(ch, "illegal bulk string length "+string(copyLine))
 			break
 		} else if strLen == -1 {
 			lines = append(lines, []byte{})
@@ -140,7 +146,9 @@ func parseArray(header []byte, reader netpoll.Reader, ch chan<- *Payload) error 
 			if err != nil {
 				return err
 			}
-			lines = append(lines, body[:len(body)-2])
+			copyBody := make([]byte, len(body)-2)
+			copy(copyBody, body[:len(body)-2])
+			lines = append(lines, copyBody)
 		}
 	}
 	ch <- &Payload{
