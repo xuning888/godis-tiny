@@ -16,14 +16,18 @@ type Payload struct {
 	Error error
 }
 
-func ParseFromStream(ctx context.Context, reader netpoll.Reader) chan *Payload {
+func ParseFromStream(ctx context.Context, conn netpoll.Connection) chan *Payload {
 	ch := make(chan *Payload)
-	go parse0(ctx, reader, ch)
+	go parse0(ctx, conn, ch)
 	return ch
 }
 
-func parse0(ctx context.Context, reader netpoll.Reader, ch chan<- *Payload) {
+func parse0(ctx context.Context, conn netpoll.Connection, ch chan<- *Payload) {
 	for {
+		if !conn.IsActive() {
+			return
+		}
+		reader := conn.Reader()
 		line, err := reader.Until('\n')
 		if err != nil {
 			ch <- &Payload{Error: err}
@@ -61,7 +65,7 @@ func parse0(ctx context.Context, reader netpoll.Reader, ch chan<- *Payload) {
 				return
 			}
 		case '*':
-			err := parseArray(line, reader, ch)
+			err = parseArray(line, reader, ch)
 			if err != nil {
 				ch <- &Payload{Error: err}
 				close(ch)
@@ -87,10 +91,13 @@ func parseBulkString(header []byte, reader netpoll.Reader, ch chan<- *Payload) e
 		}
 		return nil
 	} else {
-		body, err := reader.Next(int(strLen + 2))
+		var body []byte = nil
+		// strLen + 2 是为了把 \r\n读走
+		body, err = reader.Next(int(strLen + 2))
 		if err != nil {
 			return err
 		}
+		// \r\n 不属于数据的部分, 所以要把 \r\n 干掉， body[:len(body)-2]
 		ch <- &Payload{
 			Data: protocol.MakeBulkReply(body[:len(body)-2]),
 		}
@@ -121,7 +128,8 @@ func parseArray(header []byte, reader netpoll.Reader, ch chan<- *Payload) error 
 			protocolError(ch, "illegal bulk string header "+string(line))
 			break
 		}
-		strLen, err := strconv.ParseInt(string(line[1:length-2]), 10, 64)
+		var strLen int64
+		strLen, err = strconv.ParseInt(string(line[1:length-2]), 10, 64)
 		if err != nil || strLen < -1 {
 			protocolError(ch, "illegal bulk string length "+string(line))
 			break

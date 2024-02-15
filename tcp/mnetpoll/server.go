@@ -2,6 +2,7 @@ package mnetpoll
 
 import (
 	"context"
+	"errors"
 	"github.com/bytedance/gopkg/util/logger"
 	"github.com/cloudwego/netpoll"
 	"godis-tiny/database"
@@ -10,6 +11,7 @@ import (
 	"godis-tiny/redis/connection/simple"
 	"godis-tiny/redis/parser/mnetpoll"
 	"godis-tiny/redis/protocol"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,6 +20,8 @@ import (
 
 var dbEngine database2.DBEngine
 
+var defaultTimeout = 60
+
 type NetPollServer struct {
 	eventLoop netpoll.EventLoop
 	// 定时发送清理过期key的信号
@@ -25,6 +29,7 @@ type NetPollServer struct {
 	stopTTLChannel chan byte
 }
 
+// NewNetPollServer 使用netpoll作为网络库 https://github.com/cloudwego/netpoll
 func NewNetPollServer() *NetPollServer {
 	return &NetPollServer{
 		eventLoop:      nil,
@@ -33,6 +38,7 @@ func NewNetPollServer() *NetPollServer {
 	}
 }
 
+// Serve 启动服务
 func (n *NetPollServer) Serve(address string) error {
 	// 监听关闭信号
 	go func() {
@@ -51,10 +57,12 @@ func (n *NetPollServer) Serve(address string) error {
 		handle,
 		netpoll.WithOnPrepare(prepare),
 		netpoll.WithOnConnect(connect),
+		netpoll.WithIdleTimeout(time.Second*time.Duration(defaultTimeout)),
 	)
 	if err != nil {
 		return err
 	}
+	logger.Infof("bind: %s, start listening...", address)
 	err = n.eventLoop.Serve(listener)
 	if err != nil {
 		return err
@@ -80,10 +88,8 @@ func (n *NetPollServer) shutdown() {
 	// Stop the TTL ticker.
 	n.stopTTLChannel <- 1
 	close(n.stopTTLChannel)
-	var ctx context.Context
-	var cancel context.CancelFunc
 	// 关闭 eventLoop
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if n.eventLoop != nil {
 		if err := n.eventLoop.Shutdown(ctx); err != nil {
@@ -141,12 +147,30 @@ func handleCloseCallBack(conn netpoll.Connection) error {
 func handle(ctx context.Context, conn netpoll.Connection) error {
 	reader := conn.Reader()
 	writer := conn.Writer()
-	ch := mnetpoll.ParseFromStream(ctx, reader)
+	ch := mnetpoll.ParseFromStream(ctx, conn)
 	for payload := range ch {
+		// 每次获取到一个payload 都要把之前读取过的slice释放
 		err := reader.Release()
 		if err != nil {
 			logger.Errorf("release reader has error: %v", err)
 			return err
+		}
+		if payload.Error != nil {
+			if errors.Is(payload.Error, io.EOF) ||
+				errors.Is(payload.Error, io.ErrUnexpectedEOF) {
+				logger.Errorf("[%v] connection read payload has error", conn.RemoteAddr())
+				return payload.Error
+			}
+			errReply := protocol.MakeStandardErrReply(payload.Error.Error())
+			if conn.IsActive() {
+				err2 := quickWrite(writer, errReply.ToBytes())
+				if err2 != nil {
+					return err2
+				}
+			} else {
+				return nil
+			}
+			continue
 		}
 		if payload.Data == nil {
 			continue
@@ -155,20 +179,30 @@ func handle(ctx context.Context, conn netpoll.Connection) error {
 		if !ok {
 			continue
 		}
-		c := simple.NewConn(nil, false)
+		c := simple.NewConn(conn, false)
 		cmdRes := dbEngine.Exec(c, r.Args)
-		_, err = writer.WriteBinary(cmdRes.GetReply().ToBytes())
-		if err != nil {
-			logger.Errorf("write bytes has error: %v", err)
-			_ = conn.Close()
-			return err
+		if conn.IsActive() {
+			err = quickWrite(writer, cmdRes.GetReply().ToBytes())
+			if err != nil {
+				return err
+			}
+		} else {
+			return nil
 		}
-		err = writer.Flush()
-		if err != nil {
-			logger.Errorf("flush bytes has error: %v", err)
-			_ = conn.Close()
-			return err
-		}
+	}
+	return nil
+}
+
+func quickWrite(writer netpoll.Writer, bytes []byte) error {
+	_, err := writer.WriteBinary(bytes)
+	if err != nil {
+		logger.Errorf("write bytes has error: %v", err)
+		return err
+	}
+	err = writer.Flush()
+	if err != nil {
+		logger.Errorf("flush bytes has error: %v", err)
+		return err
 	}
 	return nil
 }
