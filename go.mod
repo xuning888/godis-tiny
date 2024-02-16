@@ -3,20 +3,21 @@ module godis-tiny
 go 1.17
 
 require (
-	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
-	github.com/rifflock/lfshook v0.0.0-20180920164130-b9218ef580f5
-	github.com/sirupsen/logrus v1.9.3
+	github.com/bytedance/gopkg v0.0.0-20220413063733-65bf48ffb3a7
+	github.com/cloudwego/netpoll v0.5.1
+	github.com/panjf2000/gnet/v2 v2.3.4
 	github.com/stretchr/testify v1.8.4
 )
 
 require (
-	github.com/bytedance/gopkg v0.0.0-20220413063733-65bf48ffb3a7 // indirect
-	github.com/cloudwego/netpoll v0.5.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/jonboulle/clockwork v0.4.0 // indirect
-	github.com/lestrrat-go/strftime v1.0.6 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	go.uber.org/atomic v1.9.0 // indirect
+	go.uber.org/multierr v1.7.0 // indirect
+	go.uber.org/zap v1.21.0 // indirect
+	golang.org/x/sync v0.5.0 // indirect
+	golang.org/x/sys v0.17.0 // indirect
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
