@@ -7,6 +7,7 @@ import (
 	"github.com/cloudwego/netpoll"
 	"godis-tiny/database"
 	database2 "godis-tiny/interface/database"
+	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/util"
 	"godis-tiny/redis/connection/simple"
 	"godis-tiny/redis/parser/mnetpoll"
@@ -14,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -21,6 +23,8 @@ import (
 var dbEngine database2.DBEngine
 
 var defaultTimeout = 60
+
+var activateMap = sync.Map{}
 
 type NetPollServer struct {
 	eventLoop netpoll.EventLoop
@@ -44,6 +48,7 @@ func (n *NetPollServer) Serve(address string) error {
 	go func() {
 		n.shutdownListener()
 	}()
+	activateMap = sync.Map{}
 	dbEngine = database.MakeStandalone()
 	dbEngine.Init()
 	go func() {
@@ -98,6 +103,23 @@ func (n *NetPollServer) shutdown() {
 	}
 	// 关闭存储引擎
 	_ = dbEngine.Close()
+
+	// 关闭连接
+	n.closeActiveMap()
+}
+
+func (n *NetPollServer) closeActiveMap() {
+	keys := make([]netpoll.Connection, 0)
+	activateMap.Range(func(conn, c interface{}) bool {
+		connection := conn.(netpoll.Connection)
+		keys = append(keys, connection)
+		return true
+	})
+	for _, key := range keys {
+		if key.IsActive() {
+			_ = key.Close()
+		}
+	}
 }
 
 func (n *NetPollServer) startTTLHandle() {
@@ -132,6 +154,8 @@ func prepare(conn netpoll.Connection) context.Context {
 
 func connect(ctx context.Context, conn netpoll.Connection) context.Context {
 	logger.Debugf("[%v] connection established", conn.RemoteAddr())
+	// 建立连接的时候存储一下
+	activateMap.Store(conn, simple.NewConn(conn, false))
 	err := conn.AddCloseCallback(handleCloseCallBack)
 	if err != nil {
 		logger.Errorf("[%v] connection add close back has err: %v", conn.RemoteAddr(), err)
@@ -140,7 +164,8 @@ func connect(ctx context.Context, conn netpoll.Connection) context.Context {
 }
 
 func handleCloseCallBack(conn netpoll.Connection) error {
-	logger.Debugf("[%v] connection closed", conn.RemoteAddr())
+	logger.Infof("[%v] connection closed", conn.RemoteAddr())
+	activateMap.Delete(conn)
 	return nil
 }
 
@@ -179,7 +204,8 @@ func handle(ctx context.Context, conn netpoll.Connection) error {
 		if !ok {
 			continue
 		}
-		c := simple.NewConn(conn, false)
+		value, _ := activateMap.LoadOrStore(conn, simple.NewConn(conn, false))
+		c := value.(redis.Connection)
 		cmdRes := dbEngine.Exec(c, r.Args)
 		if conn.IsActive() {
 			err = quickWrite(writer, cmdRes.GetReply().ToBytes())

@@ -96,10 +96,10 @@ func execTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return protocol.MakeIntReply(-1)
 	}
 
-	// 如果过期了，删除key,并且返回-1
+	// 如果过期了，删除key,并且返回-2
 	if expired {
 		db.Remove(key)
-		return protocol.MakeIntReply(-1)
+		return protocol.MakeIntReply(-2)
 	}
 	// 如果没有过期，计算ttl时间
 	expireTime := db.ExpiredAt(key)
