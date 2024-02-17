@@ -27,7 +27,7 @@ func (g *GnetServer) Serve(address string) error {
 	err := gnet.Run(
 		g,
 		address,
-		// 启用多核心
+		// 启用多核心, 开启后NumEventLoops = coreSize
 		gnet.WithMulticore(true),
 		// 启用定时任务
 		gnet.WithTicker(true),
@@ -71,14 +71,13 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	if payload.Error != nil {
 		if errors.Is(payload.Error, io.EOF) ||
 			errors.Is(payload.Error, io.ErrUnexpectedEOF) {
-			// todo log
+			logger.Errorf("[%v] connection read payload has error", c.RemoteAddr())
 			return gnet.Close
 		}
 		// 协议中的错误
 		errReply := protocol.MakeStandardErrReply(payload.Error.Error())
-		_, err := c.Write(errReply.ToBytes())
-		if err != nil {
-			// todo log
+		err2 := g.quickWrite(c, errReply.ToBytes())
+		if err2 != nil {
 			return gnet.Close
 		}
 		return gnet.None
@@ -95,7 +94,6 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	cmdRes := g.dbEngine.Exec(conn, r.Args)
 	err := g.quickWrite(c, cmdRes.GetReply().ToBytes())
 	if err != nil {
-		// todo
 		return gnet.Close
 	}
 	return gnet.None
@@ -104,12 +102,12 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 func (g *GnetServer) quickWrite(conn gnet.Conn, bytes []byte) error {
 	_, err := conn.Write(bytes)
 	if err != nil {
-		// todo log
+		logger.Errorf("write bytes has error: %v", err)
 		return err
 	}
 	err = conn.Flush()
 	if err != nil {
-		// todo log
+		logger.Errorf("flush bytes has error: %v", err)
 		return err
 	}
 	return nil

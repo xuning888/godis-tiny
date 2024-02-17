@@ -2,7 +2,6 @@ package database
 
 import (
 	"fmt"
-	"github.com/bytedance/gopkg/util/logger"
 	"godis-tiny/interface/redis"
 	"godis-tiny/redis/protocol"
 	"strings"
@@ -49,13 +48,11 @@ func clearTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 			lint.GetCmdName(), strings.Join(lint.cmdString, ", ")))
 	}
 	// 检查并清理所有数据库的过期key
-	logger.Debug("ttlops")
 	ctx.GetDb().ttlChecker.CheckAndClearDb()
 	return protocol.MakeOkReply()
 }
 
 func registerSystemCmd() {
-	RegisterCmd("ping", ping)
 	RegisterCmd("flushdb", flushDb)
 	RegisterCmd("ttlops", clearTTL)
 }
