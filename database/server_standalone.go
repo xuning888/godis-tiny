@@ -6,6 +6,7 @@ import (
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/redis/protocol"
+	"sync"
 	"sync/atomic"
 )
 
@@ -14,12 +15,16 @@ type Standalone struct {
 	dbSet    []*atomic.Value
 	reqQueue chan *database.CmdReq
 	resQueue chan *database.CmdRes
+	stopChan chan byte
+	lock     sync.Mutex
 }
 
 func MakeStandalone() *Standalone {
 	server := &Standalone{
-		resQueue: make(chan *database.CmdRes, 100000),
-		reqQueue: make(chan *database.CmdReq, 100000),
+		resQueue: make(chan *database.CmdRes, 1),
+		reqQueue: make(chan *database.CmdReq, 1),
+		stopChan: make(chan byte, 1),
+		lock:     sync.Mutex{},
 	}
 	dbSet := make([]*atomic.Value, 16)
 	for i := 0; i < 16; i++ {
@@ -41,14 +46,15 @@ func (s *Standalone) CheckIndex(index int) error {
 
 // Exec 使用reqChannel 和 resChannel 来保证命令排队执行
 func (s *Standalone) Exec(client redis.Connection, cmdLine database.CmdLine) *database.CmdRes {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	cmdReq := database.MakeCmdReq(client, cmdLine)
 	s.reqQueue <- cmdReq
-	cmdRes := <-s.resQueue
-	return cmdRes
+	return <-s.resQueue
 }
 
 // doExec 调用db执行命令，将结果放到 resQueue 中
-func (s *Standalone) doExec(req *database.CmdReq) {
+func (s *Standalone) doExec(req *database.CmdReq) *database.CmdRes {
 	// 执行命令
 	client := req.GetConn()
 	lint := parseToLint(req.GetCmdLine())
@@ -56,7 +62,7 @@ func (s *Standalone) doExec(req *database.CmdReq) {
 	var reply redis.Reply = nil
 	db, reply := s.selectDb(index)
 	if reply != nil {
-		s.resQueue <- database.MakeCmdRes(client, reply)
+		return database.MakeCmdRes(client, reply)
 	} else {
 		// 每次执行指令的时候都尝试和检查和清理过期的key
 		if lint.GetCmdName() != "ttlops" {
@@ -65,7 +71,7 @@ func (s *Standalone) doExec(req *database.CmdReq) {
 		}
 		// 执行指令
 		reply = db.Exec(client, lint)
-		s.resQueue <- database.MakeCmdRes(client, reply)
+		return database.MakeCmdRes(client, reply)
 	}
 }
 
@@ -89,6 +95,7 @@ func (s *Standalone) selectDb(index int) (*DB, redis.Reply) {
 
 // Close 关闭资源
 func (s *Standalone) Close() error {
+	s.stopChan <- 1
 	// 关闭接收命令的队列
 	close(s.reqQueue)
 	// 关闭返回结果的队列
@@ -101,8 +108,13 @@ func (s *Standalone) Init() {
 	// 开启一个协程来消费req队列
 	initResister()
 	go func() {
-		for cmdReq := range s.reqQueue {
-			s.doExec(cmdReq)
+		for {
+			select {
+			case cmdReq := <-s.reqQueue:
+				s.resQueue <- s.doExec(cmdReq)
+			case <-s.stopChan:
+				return
+			}
 		}
 	}()
 }
