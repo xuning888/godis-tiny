@@ -102,12 +102,12 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 func (g *GnetServer) quickWrite(conn gnet.Conn, bytes []byte) error {
 	_, err := conn.Write(bytes)
 	if err != nil {
-		logger.Errorf("write bytes has error: %v", err)
+		logger.Errorf("%v write bytes has error: %v", conn.RemoteAddr(), err)
 		return err
 	}
 	err = conn.Flush()
 	if err != nil {
-		logger.Errorf("flush bytes has error: %v", err)
+		logger.Errorf("%v flush bytes has error: %v", conn.RemoteAddr(), err)
 		return err
 	}
 	return nil
@@ -120,6 +120,7 @@ func (g *GnetServer) OnTick() (delay time.Duration, action gnet.Action) {
 
 var systemCon = simple.NewConn(nil, true)
 
+// ttlHandle 检查和清理所有数据库的过期key
 func (g *GnetServer) ttlHandle() {
 	g.dbEngine.Exec(systemCon, util.ToCmdLine("ttlops"))
 }

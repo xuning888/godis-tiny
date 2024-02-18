@@ -142,6 +142,8 @@ func (n *NetPollServer) doTTLHandle() {
 	dbEngine.Exec(systemConn, util.ToCmdLine("ttlops"))
 }
 
+var _ netpoll.OnRequest = handle
+
 var _ netpoll.OnPrepare = prepare
 
 var _ netpoll.OnConnect = connect
