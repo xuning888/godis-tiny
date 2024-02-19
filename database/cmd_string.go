@@ -345,6 +345,39 @@ func execGetDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	}
 }
 
+// execIncrBy incrby key increment
+func execIncrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 2 || argNum > 2 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	increment, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
+	if err != nil {
+		return protocol.MakeOutOfRangeOrNotInt()
+	}
+	valueBytes, reply := ctx.GetDb().getAsString(key)
+	if reply != nil {
+		return reply
+	} else if valueBytes == nil {
+		ctx.GetDb().PutEntity(key, &database.DataEntity{
+			Data: []byte(strconv.FormatInt(increment, 10)),
+		})
+		return protocol.MakeIntReply(increment)
+	} else {
+		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
+		if err != nil {
+			return protocol.MakeOutOfRangeOrNotInt()
+		}
+		value += increment
+		ctx.GetDb().PutEntity(key, &database.DataEntity{
+			Data: []byte(strconv.FormatInt(value, 10)),
+		})
+		return protocol.MakeIntReply(value)
+	}
+}
+
 func registerStringCmd() {
 	RegisterCmd("set", execSet)
 	RegisterCmd("get", execGet)
@@ -356,4 +389,5 @@ func registerStringCmd() {
 	RegisterCmd("mget", execMGet)
 	RegisterCmd("strlen", execStrLen)
 	RegisterCmd("getdel", execGetDel)
+	RegisterCmd("incrby", execIncrBy)
 }

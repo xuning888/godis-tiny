@@ -22,6 +22,7 @@ import (
 
 var defaultTimeout = 60
 
+// GnetServer 使用https://github.com/panjf2000/gnet作为网络实现
 type GnetServer struct {
 	activateMap sync.Map
 	dbEngine    database2.DBEngine
@@ -130,6 +131,7 @@ func (g *GnetServer) OnTick() (delay time.Duration, action gnet.Action) {
 var systemCon = simple.NewConn(nil, true)
 
 // ttlHandle 检查和清理所有数据库的过期key
+// ttlops 指令是一个内部指令, 只能被内部client触发, 这个指令会检查并清理所有DB中的过期key
 func (g *GnetServer) ttlHandle() {
 	g.dbEngine.Exec(systemCon, util.ToCmdLine("ttlops"))
 }
