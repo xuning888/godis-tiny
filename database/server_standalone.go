@@ -94,6 +94,7 @@ func (s *Standalone) selectDb(index int) (*DB, redis.Reply) {
 // Close 关闭资源
 func (s *Standalone) Close() error {
 	s.stopChan <- 1
+	close(s.stopChan)
 	// 关闭接收命令的队列
 	close(s.reqQueue)
 	// 关闭返回结果的队列

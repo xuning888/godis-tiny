@@ -1,6 +1,7 @@
 package mgnet
 
 import (
+	"context"
 	"errors"
 	"github.com/bytedance/gopkg/util/logger"
 	"github.com/panjf2000/gnet/v2"
@@ -12,7 +13,10 @@ import (
 	"godis-tiny/redis/parser/mgnet"
 	"godis-tiny/redis/protocol"
 	"io"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -33,6 +37,7 @@ func (g *GnetServer) Serve(address string) error {
 		gnet.WithTicker(true),
 		// socket 60不活跃就会被驱逐
 		gnet.WithTCPKeepAlive(time.Second*time.Duration(defaultTimeout)),
+		gnet.WithReusePort(true),
 	)
 	return err
 }
@@ -46,11 +51,15 @@ func NewGnetServer() *GnetServer {
 }
 
 func (g *GnetServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
+	logger.Info("on boot call back....")
+	// 监听 kill -15 后关闭进程
+	listenStopSignal(eng)
 	g.dbEngine.Init()
 	return gnet.None
 }
 
 func (g *GnetServer) OnShutdown(eng gnet.Engine) {
+	logger.Info("on shutdown call back....")
 	_ = g.dbEngine.Close()
 }
 
@@ -123,4 +132,21 @@ var systemCon = simple.NewConn(nil, true)
 // ttlHandle 检查和清理所有数据库的过期key
 func (g *GnetServer) ttlHandle() {
 	g.dbEngine.Exec(systemCon, util.ToCmdLine("ttlops"))
+}
+
+// listenStopSign 监听操作系统信号,关闭服务
+func listenStopSignal(eng gnet.Engine) {
+	sigCh := make(chan os.Signal)
+	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		sig := <-sigCh
+		switch sig {
+		case syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
+			logger.Infof("signal: %v", sig)
+			err := eng.Stop(context.Background())
+			if err != nil {
+				logger.Error(err)
+			}
+		}
+	}()
 }
