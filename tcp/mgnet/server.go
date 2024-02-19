@@ -101,11 +101,10 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	}
 	value, _ := g.activateMap.LoadOrStore(c, simple.NewConn(c, false))
 	conn := value.(redis.Connection)
-	cmdRes := g.dbEngine.Exec(conn, r.Args)
-	err := g.quickWrite(c, cmdRes.GetReply().ToBytes())
-	if err != nil {
-		return gnet.Close
-	}
+	go func() {
+		cmdRes := g.dbEngine.Exec(conn, r.Args)
+		g.asyncWrite(c, cmdRes.GetReply().ToBytes())
+	}()
 	return gnet.None
 }
 
@@ -120,6 +119,32 @@ func (g *GnetServer) quickWrite(conn gnet.Conn, bytes []byte) error {
 		logger.Errorf("%v flush bytes has error: %v", conn.RemoteAddr(), err)
 		return err
 	}
+	return nil
+}
+
+func (g *GnetServer) asyncWrite(c gnet.Conn, bytes []byte) {
+	var err error = nil
+	err = c.AsyncWrite(bytes, callBack)
+	maxRetry := 3
+	for retry := 0; retry < maxRetry && err != nil; retry++ {
+		logger.Debugf("Retry attempt #%d to async write to client", retry+1)
+		err = c.AsyncWrite(bytes, callBack)
+	}
+	if err != nil {
+		logger.Errorf("Failed to async write to client after %d attempts", maxRetry)
+	}
+	// logger.Debugf("Async write to client initiated successfully")
+}
+
+func callBack(c gnet.Conn, err error) error {
+	if err != nil {
+		logger.Errorf("Async writing bytes to client has error: %v", err)
+		if closeErr := c.Close(); closeErr != nil {
+			logger.Errorf("Failed to close connection: %v", closeErr)
+		}
+		return err
+	}
+	// logger.Info("Async write to client completed successfully")
 	return nil
 }
 
