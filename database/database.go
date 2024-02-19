@@ -218,8 +218,8 @@ func (db *DB) RandomCheckTTLAndClear() {
 }
 
 // RandomCheckTTLAndClearV1 随机检查一组key的过期时间，如果key已经过期了，那么清理key。
-// 优点: 清理的更加及时
-// 缺点: 使用了Peek方法，暴露了底层的实现细节是PQ
+// ttlCache按照key的过期时间组织了一个小根堆, Peek方法可以查看堆顶元素。随机检查几个堆定元元素,直到遇到没有过期的key
+// 优点: 清理的更加及时 缺点: 使用了Peek方法，暴露了底层的实现细节是PQ
 func (db *DB) RandomCheckTTLAndClearV1() {
 	if db.data.Len() == 0 {
 		return

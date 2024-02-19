@@ -22,7 +22,7 @@ type Cache interface {
 	ExpireAtTimestamp(key string) int64
 	// Len 查看ttlCache 中有多少key
 	Len() int
-
+	// Peek 查看过期时间最小的key, 这个方法会返回nil
 	Peek() *Item
 }
 
