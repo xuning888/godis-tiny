@@ -50,7 +50,7 @@ func (s *SimpleCache) Expire(key string, expireTime time.Time) {
 		s.heap.update(item, key, expireTime)
 		return
 	}
-	item = MakeItem(key, expireTime)
+	item = makeItem(key, expireTime)
 	s.ttlMap[key] = item
 	heap.Push(&s.heap, item)
 }
@@ -66,7 +66,7 @@ func (s *SimpleCache) IsExpired(key string) (expired bool, exists bool) {
 func (s *SimpleCache) Remove(key string) {
 	item, ok := s.ttlMap[key]
 	if ok {
-		heap.Remove(&s.heap, item.Index)
+		heap.Remove(&s.heap, item.index)
 		delete(s.ttlMap, key)
 	}
 }

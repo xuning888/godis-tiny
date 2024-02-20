@@ -17,14 +17,14 @@ func TestRandomOps(t *testing.T) {
 	pq := make(ttlHeap, len(items))
 	i := 0
 	for key, expiryTime := range items {
-		item := MakeItem(key, expiryTime)
-		item.Index = i
+		item := makeItem(key, expiryTime)
+		item.index = i
 		pq[i] = item
 		i++
 	}
 	heap.Init(&pq)
 
-	ele := MakeItem("2", now.Add(2*time.Second))
+	ele := makeItem("2", now.Add(2*time.Second))
 	heap.Push(&pq, ele)
 	pq.update(ele, ele.Key, time.Now().Add(1*time.Second))
 

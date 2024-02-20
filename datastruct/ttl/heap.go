@@ -17,10 +17,10 @@ type Item struct {
 	Key             string
 	ExpireTime      time.Time
 	ExpireTimestamp int64
-	Index           int
+	index           int
 }
 
-func MakeItem(key string, expiryTime time.Time) *Item {
+func makeItem(key string, expiryTime time.Time) *Item {
 	return &Item{
 		Key:             key,
 		ExpireTime:      expiryTime,
@@ -40,14 +40,14 @@ func (t ttlHeap) Less(i, j int) bool {
 
 func (t ttlHeap) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
-	t[i].Index = i
-	t[j].Index = j
+	t[i].index = i
+	t[j].index = j
 }
 
 func (t *ttlHeap) Push(x interface{}) {
 	n := len(*t)
 	ele := x.(*Item)
-	ele.Index = n
+	ele.index = n
 	*t = append(*t, ele)
 }
 
@@ -56,7 +56,7 @@ func (t *ttlHeap) Pop() interface{} {
 	n := len(old)
 	ele := old[n-1]
 	old[n-1] = nil // avoid memory leak
-	ele.Index = -1 // for safety
+	ele.index = -1 // for safety
 	*t = old[0 : n-1]
 	return ele
 }
@@ -76,5 +76,5 @@ func (t *ttlHeap) update(item *Item, key string, expiryTime time.Time) {
 	item.Key = key
 	item.ExpireTime = expiryTime
 	item.ExpireTimestamp = expiryTime.UnixMilli()
-	heap.Fix(t, item.Index)
+	heap.Fix(t, item.index)
 }
