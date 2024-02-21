@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/bytedance/gopkg v0.0.0-20220413063733-65bf48ffb3a7
-	github.com/cloudwego/netpoll v0.5.1
+	github.com/panjf2000/ants/v2 v2.8.2
 	github.com/panjf2000/gnet/v2 v2.3.4
 	github.com/stretchr/testify v1.8.4
 )

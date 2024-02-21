@@ -8,12 +8,14 @@ type CmdLine = [][]byte
 
 // DBEngine 存储引擎的抽象
 type DBEngine interface {
-	// Exec 执行client 上的命令，使用 channel 来保证线程安全，缺点就是无法读并发
-	Exec(client redis.Connection, cmdLine CmdLine) *CmdRes
 	// Close 关闭
 	Close() error
 	// Init 做必要的初始化工作
 	Init()
+	// PushReqEvent 推送一个命令到dbEngine
+	PushReqEvent(req *CmdReq)
+	// DeliverResEvent 接收res的channel
+	DeliverResEvent() <-chan *CmdRes
 }
 
 type IndexChecker interface {
@@ -30,11 +32,11 @@ type DataEntity struct {
 }
 
 type CmdReq struct {
-	conn    redis.Connection
+	conn    redis.Conn
 	cmdLine CmdLine
 }
 
-func (c *CmdReq) GetConn() redis.Connection {
+func (c *CmdReq) GetConn() redis.Conn {
 	return c.conn
 }
 
@@ -44,25 +46,25 @@ func (c *CmdReq) GetCmdLine() CmdLine {
 
 type CmdRes struct {
 	reply redis.Reply
-	conn  redis.Connection
+	conn  redis.Conn
 }
 
 func (c *CmdRes) GetReply() redis.Reply {
 	return c.reply
 }
 
-func (c *CmdRes) GetConn() redis.Connection {
+func (c *CmdRes) GetConn() redis.Conn {
 	return c.conn
 }
 
-func MakeCmdRes(conn redis.Connection, reply redis.Reply) *CmdRes {
+func MakeCmdRes(conn redis.Conn, reply redis.Reply) *CmdRes {
 	return &CmdRes{
 		conn:  conn,
 		reply: reply,
 	}
 }
 
-func MakeCmdReq(conn redis.Connection, cmdLine CmdLine) *CmdReq {
+func MakeCmdReq(conn redis.Conn, cmdLine CmdLine) *CmdReq {
 	return &CmdReq{
 		conn:    conn,
 		cmdLine: cmdLine,

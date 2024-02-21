@@ -2,28 +2,40 @@ package database
 
 import (
 	"errors"
+	"github.com/bytedance/gopkg/util/logger"
+	"github.com/panjf2000/ants/v2"
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/redis/protocol"
-	"sync"
+	"runtime"
 	"sync/atomic"
+	"time"
 )
+
+var _ database.DBEngine = &Standalone{}
 
 // Standalone 单机存储的存储引擎
 type Standalone struct {
-	dbSet    []*atomic.Value
-	reqQueue chan *database.CmdReq
-	resQueue chan *database.CmdRes
-	stopChan chan byte
-	lock     sync.Mutex
+	dbSet       []*atomic.Value
+	reqQueue    chan *database.CmdReq
+	backUpQueue chan *database.CmdReq
+	resQueue    chan *database.CmdRes
+	cmdPushPool *ants.Pool
 }
 
 func MakeStandalone() *Standalone {
+	cmdPushPool, err := ants.NewPool(runtime.NumCPU()<<8,
+		ants.WithExpiryDuration(time.Minute*time.Duration(5)))
+	if err != nil {
+		logger.Errorf("new ants pool has error: %v", err)
+		panic(err)
+	}
+	logger.Infof("cmdPushPool size: %v", cmdPushPool.Cap())
 	server := &Standalone{
-		resQueue: make(chan *database.CmdRes, 1),
-		reqQueue: make(chan *database.CmdReq, 1),
-		stopChan: make(chan byte, 1),
-		lock:     sync.Mutex{},
+		resQueue:    make(chan *database.CmdRes, 1),
+		reqQueue:    make(chan *database.CmdReq, 1),
+		backUpQueue: make(chan *database.CmdReq, 200000),
+		cmdPushPool: cmdPushPool,
 	}
 	dbSet := make([]*atomic.Value, 16)
 	for i := 0; i < 16; i++ {
@@ -43,13 +55,35 @@ func (s *Standalone) CheckIndex(index int) error {
 	return nil
 }
 
-// Exec 使用reqChannel 和 resChannel 来保证命令排队执行
-func (s *Standalone) Exec(client redis.Connection, cmdLine database.CmdLine) *database.CmdRes {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	cmdReq := database.MakeCmdReq(client, cmdLine)
-	s.reqQueue <- cmdReq
-	return <-s.resQueue
+func (s *Standalone) PushReqEvent(req *database.CmdReq) {
+	// 使用协程池控制协程的创建数量
+	maxRetry, retry := 3, 0
+	var err error = nil
+	for err = s.cmdPushPool.Submit(func() {
+		s.reqQueue <- req
+	}); retry < maxRetry && err != nil; retry++ {
+		if err != nil {
+			logger.Errorf("Attempt %d to push request event failed with error: %v", retry, err)
+		}
+	}
+	if err != nil {
+		logger.Warnf("Command request could not be submitted after %d attempts, added to backup queue. Error: %v", retry, err)
+		// 如果重试之后都没把命令放入队列，那么就把该命令放到一个缓冲区
+		go func() {
+			s.backUpQueue <- req
+		}()
+	}
+	// 对协程池扩容
+	if retry != 0 {
+		oldCap := s.cmdPushPool.Cap()
+		newCap := oldCap << 1
+		s.cmdPushPool.Tune(newCap)
+		logger.Warnf("Increasing capacity of command execution pool from %d to %d due to past failures.", oldCap, newCap)
+	}
+}
+
+func (s *Standalone) DeliverResEvent() <-chan *database.CmdRes {
+	return s.resQueue
 }
 
 // doExec 调用db执行命令，将结果放到 resQueue 中
@@ -93,26 +127,49 @@ func (s *Standalone) selectDb(index int) (*DB, redis.Reply) {
 
 // Close 关闭资源
 func (s *Standalone) Close() error {
-	s.stopChan <- 1
-	close(s.stopChan)
 	// 关闭接收命令的队列
 	close(s.reqQueue)
 	// 关闭返回结果的队列
 	close(s.resQueue)
+	// 释放协程池
+	s.cmdPushPool.Release()
 	return nil
 }
 
 // Init 初始化 standalone，开启一个消费者消费cmdReqQueue中的命令
 func (s *Standalone) Init() {
-	// 开启一个协程来消费req队列
 	initResister()
+	// 开启一个协程来消费req队列
+	s.startCmdConsumer()
+	// 开启一个协程监听缓冲区的队列
+	s.backUpQueueConsumer()
+}
+
+// startCmdConsumer 开启一个协程消费指令
+func (s *Standalone) startCmdConsumer() {
 	go func() {
 		for {
 			select {
-			case cmdReq := <-s.reqQueue:
+			case cmdReq, ok := <-s.reqQueue:
+				if !ok {
+					return
+				}
 				s.resQueue <- s.doExec(cmdReq)
-			case <-s.stopChan:
-				return
+			}
+		}
+	}()
+}
+
+// backUpQueueConsumer 把缓冲区队列中的命令放到reqQueue中
+func (s *Standalone) backUpQueueConsumer() {
+	go func() {
+		for {
+			select {
+			case cmdReq, ok := <-s.backUpQueue:
+				if !ok {
+					return
+				}
+				s.reqQueue <- cmdReq
 			}
 		}
 	}()

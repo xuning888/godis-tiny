@@ -1,4 +1,4 @@
-package mgnet
+package tcp
 
 import (
 	"context"
@@ -9,22 +9,23 @@ import (
 	database2 "godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/util"
-	"godis-tiny/redis/connection/simple"
-	"godis-tiny/redis/parser/mgnet"
+	"godis-tiny/redis/connection/mnetpoll"
+	"godis-tiny/redis/parser"
 	"godis-tiny/redis/protocol"
 	"io"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 )
+
+var _ gnet.EventHandler = &GnetServer{}
 
 var defaultTimeout = 60
 
 // GnetServer 使用https://github.com/panjf2000/gnet作为网络实现
 type GnetServer struct {
-	activateMap sync.Map
+	activateMap map[gnet.Conn]redis.Conn
 	dbEngine    database2.DBEngine
 }
 
@@ -46,7 +47,7 @@ func (g *GnetServer) Serve(address string) error {
 func NewGnetServer() *GnetServer {
 	dbEngine := database.MakeStandalone()
 	return &GnetServer{
-		activateMap: sync.Map{},
+		activateMap: make(map[gnet.Conn]redis.Conn),
 		dbEngine:    dbEngine,
 	}
 }
@@ -55,7 +56,10 @@ func (g *GnetServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
 	logger.Info("on boot call back....")
 	// 监听 kill -15 后关闭进程
 	listenStopSignal(eng)
+	// dbEngine做初始化
 	g.dbEngine.Init()
+	// 监听dbEngine返回的结果写回给客户端
+	g.listenCmdResAndWrite2Peer()
 	return gnet.None
 }
 
@@ -66,18 +70,18 @@ func (g *GnetServer) OnShutdown(eng gnet.Engine) {
 
 func (g *GnetServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	logger.Infof("connection: %v\n", c.RemoteAddr())
-	g.activateMap.LoadOrStore(c, simple.NewConn(c, false))
+	g.activateMap[c] = mnetpoll.NewConn(c, false)
 	return nil, gnet.None
 }
 
 func (g *GnetServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	logger.Infof("conn: %v, closed", c.RemoteAddr())
-	g.activateMap.Delete(c)
+	delete(g.activateMap, c)
 	return gnet.None
 }
 
 func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
-	payload := mgnet.Parse(c)
+	payload := parser.Parse(c)
 	if payload.Error != nil {
 		if errors.Is(payload.Error, io.EOF) ||
 			errors.Is(payload.Error, io.ErrUnexpectedEOF) {
@@ -99,13 +103,54 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	if !ok {
 		return gnet.None
 	}
-	value, _ := g.activateMap.LoadOrStore(c, simple.NewConn(c, false))
-	conn := value.(redis.Connection)
-	go func() {
-		cmdRes := g.dbEngine.Exec(conn, r.Args)
-		g.asyncWrite(c, cmdRes.GetReply().ToBytes())
-	}()
+	conn, ok := g.activateMap[c]
+	if !ok {
+		conn = mnetpoll.NewConn(c, false)
+		g.activateMap[c] = conn
+	}
+	cmdReq := database2.MakeCmdReq(conn, r.Args)
+	// 推送命令到dbEngine
+	g.dbEngine.PushReqEvent(cmdReq)
 	return gnet.None
+}
+
+func (g *GnetServer) OnTick() (delay time.Duration, action gnet.Action) {
+	g.ttlHandle()
+	return time.Second * time.Duration(1), gnet.None
+}
+
+// listenCmdResAndWrite2Peer 监听dbEngine的命令消费结果, 然后写回去给客户端。
+// 这个方法使用了gnet的 AsyncWrite方法。AsyncWrite方法会将写任务排入asyncTaskQueue，然后交给eventLoop进行轮询执行。
+// 因此，这个方法在单协程上运行，其消费能力由eventLoop决定。
+func (g *GnetServer) listenCmdResAndWrite2Peer() {
+	logger.Info("start listen cmdResQueue")
+	resEventChan := g.dbEngine.DeliverResEvent()
+	go func() {
+		for {
+			select {
+			case cmdRes, ok := <-resEventChan:
+				if !ok {
+					return
+				}
+				conn := cmdRes.GetConn()
+				if conn.IsInner() {
+					continue
+				}
+				g.asyncWrite(conn.GnetConn(), cmdRes.GetReply().ToBytes())
+			}
+		}
+	}()
+}
+
+func callback(c gnet.Conn, err error) error {
+	if err != nil {
+		logger.Errorf("Async writing bytes to client has error: %v", err)
+		if closeErr := c.Close(); closeErr != nil {
+			logger.Errorf("Failed to close connection: %v", closeErr)
+		}
+		return err
+	}
+	return nil
 }
 
 func (g *GnetServer) quickWrite(conn gnet.Conn, bytes []byte) error {
@@ -124,41 +169,24 @@ func (g *GnetServer) quickWrite(conn gnet.Conn, bytes []byte) error {
 
 func (g *GnetServer) asyncWrite(c gnet.Conn, bytes []byte) {
 	var err error = nil
-	err = c.AsyncWrite(bytes, callBack)
+	err = c.AsyncWrite(bytes, callback)
 	maxRetry := 3
 	for retry := 0; retry < maxRetry && err != nil; retry++ {
-		logger.Debugf("Retry attempt #%d to async write to client", retry+1)
-		err = c.AsyncWrite(bytes, callBack)
+		logger.Warnf("Retry attempt #%d to async write to client", retry+1)
+		err = c.AsyncWrite(bytes, callback)
 	}
 	if err != nil {
 		logger.Errorf("Failed to async write to client after %d attempts", maxRetry)
 	}
-	// logger.Debugf("Async write to client initiated successfully")
 }
 
-func callBack(c gnet.Conn, err error) error {
-	if err != nil {
-		logger.Errorf("Async writing bytes to client has error: %v", err)
-		if closeErr := c.Close(); closeErr != nil {
-			logger.Errorf("Failed to close connection: %v", closeErr)
-		}
-		return err
-	}
-	// logger.Info("Async write to client completed successfully")
-	return nil
-}
-
-func (g *GnetServer) OnTick() (delay time.Duration, action gnet.Action) {
-	g.ttlHandle()
-	return time.Second * time.Duration(1), gnet.None
-}
-
-var systemCon = simple.NewConn(nil, true)
+var systemCon = mnetpoll.NewConn(nil, true)
 
 // ttlHandle 检查和清理所有数据库的过期key
 // ttlops 指令是一个内部指令, 只能被内部client触发, 这个指令会检查并清理所有DB中的过期key
 func (g *GnetServer) ttlHandle() {
-	g.dbEngine.Exec(systemCon, util.ToCmdLine("ttlops"))
+	cmdReq := database2.MakeCmdReq(systemCon, util.ToCmdLine("ttlops"))
+	g.dbEngine.PushReqEvent(cmdReq)
 }
 
 // listenStopSign 监听操作系统信号,关闭服务

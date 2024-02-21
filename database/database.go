@@ -22,18 +22,18 @@ type cmdLint struct {
 
 type CommandContext struct {
 	db   *DB
-	conn redis.Connection
+	conn redis.Conn
 }
 
 func (c *CommandContext) GetDb() *DB {
 	return c.db
 }
 
-func (c *CommandContext) GetConn() redis.Connection {
+func (c *CommandContext) GetConn() redis.Conn {
 	return c.conn
 }
 
-func MakeCommandContext(db *DB, conn redis.Connection) *CommandContext {
+func MakeCommandContext(db *DB, conn redis.Conn) *CommandContext {
 	return &CommandContext{
 		db:   db,
 		conn: conn,
@@ -100,7 +100,7 @@ func MakeSimpleSync(index int, checker database.IndexChecker, ttlChecker databas
 	}
 }
 
-func (db *DB) Exec(c redis.Connection, lint *cmdLint) redis.Reply {
+func (db *DB) Exec(c redis.Conn, lint *cmdLint) redis.Reply {
 	cmdName := lint.GetCmdName()
 	cmd := getCommand(cmdName)
 	if cmd == nil {
