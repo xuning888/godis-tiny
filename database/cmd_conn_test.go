@@ -5,7 +5,7 @@ import (
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/util"
-	"godis-tiny/redis/connection/mnetpoll"
+	"godis-tiny/redis/connection"
 	"godis-tiny/redis/protocol"
 	"testing"
 )
@@ -35,7 +35,7 @@ func TestPing(t *testing.T) {
 
 	server := MakeStandalone()
 	server.Init()
-	client := mnetpoll.NewConn(nil, false)
+	client := connection.NewConn(nil, false)
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestSelectDb(t *testing.T) {
 
 	server := MakeStandalone()
 	server.Init()
-	client := mnetpoll.NewConn(nil, false)
+	client := connection.NewConn(nil, false)
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {

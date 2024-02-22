@@ -9,7 +9,7 @@ import (
 	database2 "godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/util"
-	"godis-tiny/redis/connection/mnetpoll"
+	"godis-tiny/redis/connection"
 	"godis-tiny/redis/parser"
 	"godis-tiny/redis/protocol"
 	"io"
@@ -70,7 +70,8 @@ func (g *GnetServer) OnShutdown(eng gnet.Engine) {
 
 func (g *GnetServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	logger.Infof("connection: %v\n", c.RemoteAddr())
-	g.activateMap[c] = mnetpoll.NewConn(c, false)
+	redisConn := connection.NewConn(c, false)
+	g.activateMap[c] = redisConn
 	return nil, gnet.None
 }
 
@@ -105,7 +106,7 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	}
 	conn, ok := g.activateMap[c]
 	if !ok {
-		conn = mnetpoll.NewConn(c, false)
+		conn = connection.NewConn(c, false)
 		g.activateMap[c] = conn
 	}
 	cmdReq := database2.MakeCmdReq(conn, r.Args)
@@ -180,7 +181,7 @@ func (g *GnetServer) asyncWrite(c gnet.Conn, bytes []byte) {
 	}
 }
 
-var systemCon = mnetpoll.NewConn(nil, true)
+var systemCon = connection.NewConn(nil, true)
 
 // ttlHandle 检查和清理所有数据库的过期key
 // ttlops 指令是一个内部指令, 只能被内部client触发, 这个指令会检查并清理所有DB中的过期key

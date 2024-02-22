@@ -1,4 +1,4 @@
-package mnetpoll
+package connection
 
 import (
 	"github.com/panjf2000/gnet/v2"

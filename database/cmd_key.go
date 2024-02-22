@@ -3,6 +3,7 @@ package database
 import (
 	"godis-tiny/interface/redis"
 	"godis-tiny/redis/protocol"
+	"math"
 	"path"
 	"strconv"
 	"time"
@@ -105,7 +106,8 @@ func execTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	expireTime := db.ExpiredAt(key)
 	// ttl
 	remainingTime := expireTime.Sub(time.Now())
-	return protocol.MakeIntReply(int64(remainingTime / time.Second))
+	seconds := remainingTime.Seconds()
+	return protocol.MakeIntReply(int64(math.Round(seconds)))
 }
 
 // execExpire expire key ttl

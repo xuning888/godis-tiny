@@ -6,7 +6,7 @@ import (
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/util"
-	"godis-tiny/redis/connection/mnetpoll"
+	"godis-tiny/redis/connection"
 	"godis-tiny/redis/protocol"
 	"testing"
 	"time"
@@ -124,7 +124,7 @@ func TestExeSet(t *testing.T) {
 		},
 	}
 
-	client := mnetpoll.NewConn(nil, false)
+	client := connection.NewConn(nil, false)
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			server := tc.serverSupply()
