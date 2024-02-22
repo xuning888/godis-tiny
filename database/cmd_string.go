@@ -18,7 +18,7 @@ func (db *DB) getAsString(key string) ([]byte, protocol.ErrReply) {
 	// 类型转换
 	bytes, ok := entity.Data.([]byte)
 	if !ok {
-		return nil, &protocol.WrongTypeErrReply{}
+		return nil, protocol.MakeWrongTypeErrReply()
 	}
 	return bytes, nil
 }

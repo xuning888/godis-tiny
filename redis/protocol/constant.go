@@ -1,11 +1,29 @@
 package protocol
 
 var (
-	NullBulkReplyBytes  = []byte("$-1" + CRLF)
-	emptyMultiBulkBytes = []byte("*0" + CRLF)
-	PongReplyBytes      = []byte("+PONG" + CRLF)
-	okReplyBytes        = []byte("+OK" + CRLF)
-	synTaxReplyBytes    = []byte("-ERR syntax error" + CRLF)
+	NullBulkReplyBytes      = []byte("$-1" + CRLF)
+	emptyMultiBulkBytes     = []byte("*0" + CRLF)
+	PongReplyBytes          = []byte("+PONG" + CRLF)
+	okReplyBytes            = []byte("+OK" + CRLF)
+	synTaxReplyBytes        = []byte("-ERR syntax error" + CRLF)
+	outOfRangeOrNotIntBytes = []byte("-ERR value is not an integer or out of range" + CRLF)
+)
+
+var (
+	// pongReply
+	pongReply = &PongReply{}
+	// nullBulkReply
+	nullBulkReply = &NullBulkReply{}
+	// emptyMultiReply
+	emptyMultiReply = &EmptyMultiBulkReply{}
+	// ok
+	okReply = &OkReply{}
+	// syntaxReply
+	syntaxReply = &SyntaxReply{}
+	// outOfRangeOrNotIntErr
+	outOfRangeOrNotIntErr = &OutOfRangeOrNotIntErr{}
+	// wrongTypeErrReply
+	wrongTypeErrReply = &WrongTypeErrReply{}
 )
 
 type PongReply struct {
@@ -16,7 +34,7 @@ func (p *PongReply) ToBytes() []byte {
 }
 
 func MakePongReply() *PongReply {
-	return &PongReply{}
+	return pongReply
 }
 
 type NullBulkReply struct {
@@ -27,7 +45,7 @@ func (n *NullBulkReply) ToBytes() []byte {
 }
 
 func MakeNullBulkReply() *NullBulkReply {
-	return &NullBulkReply{}
+	return nullBulkReply
 }
 
 type EmptyMultiBulkReply struct{}
@@ -37,7 +55,7 @@ func (r *EmptyMultiBulkReply) ToBytes() []byte {
 }
 
 func MakeEmptyMultiBulkReply() *EmptyMultiBulkReply {
-	return &EmptyMultiBulkReply{}
+	return emptyMultiReply
 }
 
 type WrongTypeErrReply struct{}
@@ -53,6 +71,10 @@ func (r *WrongTypeErrReply) Error() string {
 	return "WRONGTYPE Operation against a key holding the wrong kind of value"
 }
 
+func MakeWrongTypeErrReply() ErrReply {
+	return wrongTypeErrReply
+}
+
 type OkReply struct{}
 
 func (o *OkReply) ToBytes() []byte {
@@ -60,14 +82,14 @@ func (o *OkReply) ToBytes() []byte {
 }
 
 func MakeOkReply() *OkReply {
-	return &OkReply{}
+	return okReply
 }
 
 type SyntaxReply struct {
 }
 
 func MakeSyntaxReply() *SyntaxReply {
-	return &SyntaxReply{}
+	return syntaxReply
 }
 
 func (s *SyntaxReply) ToBytes() []byte {
@@ -79,9 +101,9 @@ type OutOfRangeOrNotIntErr struct {
 }
 
 func (o *OutOfRangeOrNotIntErr) ToBytes() []byte {
-	return MakeStandardErrReply("ERR value is not an integer or out of range").ToBytes()
+	return outOfRangeOrNotIntBytes
 }
 
 func MakeOutOfRangeOrNotInt() *OutOfRangeOrNotIntErr {
-	return &OutOfRangeOrNotIntErr{}
+	return outOfRangeOrNotIntErr
 }
