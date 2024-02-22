@@ -5,7 +5,7 @@ import (
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/util"
-	"godis-tiny/redis/connection/simple"
+	"godis-tiny/redis/connection/mnetpoll"
 	"godis-tiny/redis/protocol"
 	"testing"
 )
@@ -35,17 +35,20 @@ func TestPing(t *testing.T) {
 
 	server := MakeStandalone()
 	server.Init()
-	client := simple.NewConn(nil, false)
+	client := mnetpoll.NewConn(nil, false)
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			cmdRes := server.Exec(client, tc.Line)
+			server.PushReqEvent(database.MakeCmdReq(client, tc.Line))
+			event := server.DeliverResEvent()
+			cmdRes := <-event
 			conn := cmdRes.GetConn()
 			assert.Equal(t, client, conn)
 			actualReply := cmdRes.GetReply()
 			assert.Equal(t, tc.wantReply, actualReply)
 		})
 	}
+	_ = server.Close()
 }
 
 func TestSelectDb(t *testing.T) {
@@ -83,11 +86,13 @@ func TestSelectDb(t *testing.T) {
 
 	server := MakeStandalone()
 	server.Init()
-	client := simple.NewConn(nil, false)
+	client := mnetpoll.NewConn(nil, false)
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			cmdRes := server.Exec(client, tc.Line)
+			server.PushReqEvent(database.MakeCmdReq(client, tc.Line))
+			event := server.DeliverResEvent()
+			cmdRes := <-event
 			conn := cmdRes.GetConn()
 			assert.Equal(t, client, conn)
 			actualReply := cmdRes.GetReply()

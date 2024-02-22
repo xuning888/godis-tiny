@@ -24,6 +24,8 @@ type Cache interface {
 	Len() int
 	// Peek 查看过期时间最小的key, 这个方法会返回nil
 	Peek() *Item
+	// Clear 清空ttl缓存
+	Clear()
 }
 
 type SimpleCache struct {
@@ -90,6 +92,10 @@ func (s *SimpleCache) ExpireAtTimestamp(key string) int64 {
 func (s *SimpleCache) Len() int {
 	ttlMapLen := len(s.ttlMap)
 	return ttlMapLen
+}
+
+func (s *SimpleCache) Clear() {
+	*s = *MakeSimple()
 }
 
 func MakeSimple() *SimpleCache {

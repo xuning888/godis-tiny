@@ -6,7 +6,7 @@ import (
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/util"
-	"godis-tiny/redis/connection/simple"
+	"godis-tiny/redis/connection/mnetpoll"
 	"godis-tiny/redis/protocol"
 	"testing"
 	"time"
@@ -124,7 +124,7 @@ func TestExeSet(t *testing.T) {
 		},
 	}
 
-	client := simple.NewConn(nil, false)
+	client := mnetpoll.NewConn(nil, false)
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			server := tc.serverSupply()
@@ -135,7 +135,10 @@ func TestExeSet(t *testing.T) {
 						time.Sleep(time.Millisecond * time.Duration(waitTime))
 					}
 				}
-				cmdRes := server.Exec(client, line)
+				req := database.MakeCmdReq(client, line)
+				server.PushReqEvent(req)
+				deliverResEvent := server.DeliverResEvent()
+				cmdRes := <-deliverResEvent
 				conn := cmdRes.GetConn()
 				assert.Equal(t, client, conn)
 				actualReply := cmdRes.GetReply()

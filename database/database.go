@@ -170,6 +170,7 @@ func (db *DB) Flush() {
 	length := db.data.Len()
 	if length > 0 {
 		db.data.Clear()
+		db.ttlCache.Clear()
 	}
 }
 
