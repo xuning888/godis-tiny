@@ -2,14 +2,14 @@ package database
 
 import (
 	"errors"
-	"github.com/bytedance/gopkg/util/logger"
 	"github.com/panjf2000/ants/v2"
+	"go.uber.org/zap"
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
+	"godis-tiny/pkg/logger"
 	"godis-tiny/redis/protocol"
 	"runtime"
 	"sync/atomic"
-	"time"
 )
 
 var _ database.DBEngine = &Standalone{}
@@ -21,22 +21,33 @@ type Standalone struct {
 	backUpQueue chan *database.CmdReq
 	resQueue    chan *database.CmdRes
 	cmdPushPool *ants.Pool
+	lg          *zap.Logger
 }
 
+var multi = runtime.NumCPU() << 9
+
 func MakeStandalone() *Standalone {
-	cmdPushPool, err := ants.NewPool(runtime.NumCPU()<<8,
-		ants.WithExpiryDuration(time.Minute*time.Duration(5)))
+	server := &Standalone{
+		resQueue:    make(chan *database.CmdRes, multi),
+		reqQueue:    make(chan *database.CmdReq, multi),
+		backUpQueue: make(chan *database.CmdReq, 1),
+	}
+	upLogger, err := logger.SetUpLogger(logger.DefaultLevel)
 	if err != nil {
-		logger.Errorf("new ants pool has error: %v", err)
 		panic(err)
 	}
-	logger.Infof("cmdPushPool size: %v", cmdPushPool.Cap())
-	server := &Standalone{
-		resQueue:    make(chan *database.CmdRes, 1),
-		reqQueue:    make(chan *database.CmdReq, 1),
-		backUpQueue: make(chan *database.CmdReq, 200000),
-		cmdPushPool: cmdPushPool,
+	server.lg = upLogger
+	cmdPushPool, err := ants.NewPool(
+		multi,
+		ants.WithNonblocking(true),
+		ants.WithPreAlloc(true),
+	)
+	if err != nil {
+		server.lg.Sugar().Errorf("new ants pool failed with error: %v", err)
+		panic(err)
 	}
+	server.lg.Sugar().Infof("cmdPushPool size: %v", cmdPushPool.Cap())
+	server.cmdPushPool = cmdPushPool
 	dbSet := make([]*atomic.Value, 16)
 	for i := 0; i < 16; i++ {
 		sdb := MakeSimpleDb(i, server, server)
@@ -63,11 +74,11 @@ func (s *Standalone) PushReqEvent(req *database.CmdReq) {
 		s.reqQueue <- req
 	}); retry < maxRetry && err != nil; retry++ {
 		if err != nil {
-			logger.Errorf("Attempt %d to push request event failed with error: %v", retry, err)
+			s.lg.Sugar().Errorf("Attempt %d to push request event failed with error: %v", retry, err)
 		}
 	}
 	if err != nil {
-		logger.Warnf("Command request could not be submitted after %d attempts, added to backup queue. Error: %v", retry, err)
+		s.lg.Sugar().Warnf("Command request could not be submitted after %d attempts, added to backup queue. Error: %v", retry, err)
 		// 如果重试之后都没把命令放入队列，那么就把该命令放到一个缓冲区
 		go func() {
 			s.backUpQueue <- req
@@ -78,7 +89,7 @@ func (s *Standalone) PushReqEvent(req *database.CmdReq) {
 		oldCap := s.cmdPushPool.Cap()
 		newCap := oldCap << 1
 		s.cmdPushPool.Tune(newCap)
-		logger.Warnf("Increasing capacity of command execution pool from %d to %d due to past failures.", oldCap, newCap)
+		s.lg.Sugar().Warnf("Increasing capacity of command execution pool from %d to %d due to past failures.", oldCap, newCap)
 	}
 }
 

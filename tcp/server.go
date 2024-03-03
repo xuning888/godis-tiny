@@ -3,11 +3,12 @@ package tcp
 import (
 	"context"
 	"errors"
-	"github.com/bytedance/gopkg/util/logger"
 	"github.com/panjf2000/gnet/v2"
+	"go.uber.org/zap"
 	"godis-tiny/database"
 	database2 "godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
+	"godis-tiny/pkg/logger"
 	"godis-tiny/pkg/util"
 	"godis-tiny/redis/connection"
 	"godis-tiny/redis/parser"
@@ -27,6 +28,7 @@ var defaultTimeout = 60
 type GnetServer struct {
 	activateMap map[gnet.Conn]redis.Conn
 	dbEngine    database2.DBEngine
+	logger      *zap.SugaredLogger
 }
 
 func (g *GnetServer) Serve(address string) error {
@@ -40,22 +42,24 @@ func (g *GnetServer) Serve(address string) error {
 		// socket 60不活跃就会被驱逐
 		gnet.WithTCPKeepAlive(time.Second*time.Duration(defaultTimeout)),
 		gnet.WithReusePort(true),
+		gnet.WithLogger(g.logger),
 	)
 	return err
 }
 
-func NewGnetServer() *GnetServer {
+func NewGnetServer(lg *zap.Logger) *GnetServer {
 	dbEngine := database.MakeStandalone()
 	return &GnetServer{
 		activateMap: make(map[gnet.Conn]redis.Conn),
 		dbEngine:    dbEngine,
+		logger:      lg.Sugar(),
 	}
 }
 
 func (g *GnetServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
-	logger.Info("on boot call back....")
+	g.logger.Info("on boot call back....")
 	// 监听 kill -15 后关闭进程
-	listenStopSignal(eng)
+	g.listenStopSignal(eng)
 	// dbEngine做初始化
 	g.dbEngine.Init()
 	// 监听dbEngine返回的结果写回给客户端
@@ -64,29 +68,29 @@ func (g *GnetServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
 }
 
 func (g *GnetServer) OnShutdown(eng gnet.Engine) {
-	logger.Info("on shutdown call back....")
+	g.logger.Info("on shutdown call back....")
 	_ = g.dbEngine.Close()
 }
 
 func (g *GnetServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
-	logger.Infof("connection: %v\n", c.RemoteAddr())
+	g.logger.Infof("accept conn: %v", c.RemoteAddr())
 	redisConn := connection.NewConn(c, false)
 	g.activateMap[c] = redisConn
 	return nil, gnet.None
 }
 
 func (g *GnetServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
-	logger.Infof("conn: %v, closed", c.RemoteAddr())
+	g.logger.Infof("conn: %v, closed", c.RemoteAddr())
 	delete(g.activateMap, c)
 	return gnet.None
 }
 
 func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
-	payload := parser.Parse(c)
+	payload := parser.Decode(c)
 	if payload.Error != nil {
 		if errors.Is(payload.Error, io.EOF) ||
 			errors.Is(payload.Error, io.ErrUnexpectedEOF) {
-			logger.Errorf("[%v] connection read payload has error", c.RemoteAddr())
+			g.logger.Errorf("[%v] connection read payload has error", c.RemoteAddr())
 			return gnet.Close
 		}
 		// 协议中的错误
@@ -124,7 +128,7 @@ func (g *GnetServer) OnTick() (delay time.Duration, action gnet.Action) {
 // 这个方法使用了gnet的 AsyncWrite方法。AsyncWrite方法会将写任务排入asyncTaskQueue，然后交给eventLoop进行轮询执行。
 // 因此，这个方法在单协程上运行，其消费能力由eventLoop决定。
 func (g *GnetServer) listenCmdResAndWrite2Peer() {
-	logger.Info("start listen cmdResQueue")
+	g.logger.Info("start listen cmdResQueue")
 	resEventChan := g.dbEngine.DeliverResEvent()
 	go func() {
 		for {
@@ -157,12 +161,12 @@ func callback(c gnet.Conn, err error) error {
 func (g *GnetServer) quickWrite(conn gnet.Conn, bytes []byte) error {
 	_, err := conn.Write(bytes)
 	if err != nil {
-		logger.Errorf("%v write bytes has error: %v", conn.RemoteAddr(), err)
+		g.logger.Errorf("%v write bytes has error: %v", conn.RemoteAddr(), err)
 		return err
 	}
 	err = conn.Flush()
 	if err != nil {
-		logger.Errorf("%v flush bytes has error: %v", conn.RemoteAddr(), err)
+		g.logger.Errorf("%v flush bytes has error: %v", conn.RemoteAddr(), err)
 		return err
 	}
 	return nil
@@ -173,11 +177,11 @@ func (g *GnetServer) asyncWrite(c gnet.Conn, bytes []byte) {
 	err = c.AsyncWrite(bytes, callback)
 	maxRetry := 3
 	for retry := 0; retry < maxRetry && err != nil; retry++ {
-		logger.Warnf("Retry attempt #%d to async write to client", retry+1)
+		g.logger.Warnf("Retry attempt #%d to async write to client", retry+1)
 		err = c.AsyncWrite(bytes, callback)
 	}
 	if err != nil {
-		logger.Errorf("Failed to async write to client after %d attempts", maxRetry)
+		g.logger.Errorf("Failed to async write to client after %d attempts", maxRetry)
 	}
 }
 
@@ -191,17 +195,17 @@ func (g *GnetServer) ttlHandle() {
 }
 
 // listenStopSign 监听操作系统信号,关闭服务
-func listenStopSignal(eng gnet.Engine) {
+func (g *GnetServer) listenStopSignal(eng gnet.Engine) {
 	sigCh := make(chan os.Signal)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		sig := <-sigCh
 		switch sig {
 		case syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
-			logger.Infof("signal: %v", sig)
+			g.logger.Infof("signal: %v", sig)
 			err := eng.Stop(context.Background())
 			if err != nil {
-				logger.Error(err)
+				g.logger.Error(err)
 			}
 		}
 	}()

@@ -379,15 +379,15 @@ func execIncrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func registerStringCmd() {
-	RegisterCmd("set", execSet)
-	RegisterCmd("get", execGet)
-	RegisterCmd("getset", execGetSet)
-	RegisterCmd("incr", execIncr)
-	RegisterCmd("decr", execDecr)
-	RegisterCmd("setnx", execSetNx)
-	RegisterCmd("getrange", execGetRange)
-	RegisterCmd("mget", execMGet)
-	RegisterCmd("strlen", execStrLen)
-	RegisterCmd("getdel", execGetDel)
-	RegisterCmd("incrby", execIncrBy)
+	cmdManager.registerCmd("set", execSet)
+	cmdManager.registerCmd("get", execGet)
+	cmdManager.registerCmd("getset", execGetSet)
+	cmdManager.registerCmd("incr", execIncr)
+	cmdManager.registerCmd("decr", execDecr)
+	cmdManager.registerCmd("setnx", execSetNx)
+	cmdManager.registerCmd("getrange", execGetRange)
+	cmdManager.registerCmd("mget", execMGet)
+	cmdManager.registerCmd("strlen", execStrLen)
+	cmdManager.registerCmd("getdel", execGetDel)
+	cmdManager.registerCmd("incrby", execIncrBy)
 }

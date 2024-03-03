@@ -40,6 +40,6 @@ func selectDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func registerConnCmd() {
-	RegisterCmd("ping", ping)
-	RegisterCmd("select", selectDb)
+	cmdManager.registerCmd("ping", ping)
+	cmdManager.registerCmd("select", selectDb)
 }

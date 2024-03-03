@@ -53,6 +53,6 @@ func clearTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func registerSystemCmd() {
-	RegisterCmd("flushdb", flushDb)
-	RegisterCmd("ttlops", clearTTL)
+	cmdManager.registerCmd("flushdb", flushDb)
+	cmdManager.registerCmd("ttlops", clearTTL)
 }

@@ -1,28 +1,40 @@
 package main
 
 import (
-	"github.com/bytedance/gopkg/util/logger"
+	"fmt"
+	"godis-tiny/config"
+	"godis-tiny/pkg/logger"
+	"godis-tiny/pkg/util"
 	"godis-tiny/tcp"
+	"os"
 )
 
-type runFunc func(address string) error
+var defaultConfig = &config.ServerProperties{
+	Bind:           "0.0.0.0",
+	Port:           6279,
+	AppendOnly:     false,
+	AppendFilename: "",
+	RunID:          util.RandStr(40),
+}
+
+func fileExists(filename string) bool {
+	stat, err := os.Stat(filename)
+	return err == nil && !stat.IsDir()
+}
 
 func main() {
-	logger.SetLevel(logger.LevelInfo)
-
-	run(":8080", runGnetServer)
-}
-
-func run(address string, r runFunc) {
-	if err := r(address); err != nil {
-		logger.Errorf("start server has error: %v", err)
+	lg, err := logger.SetUpLogger(logger.DefaultLevel)
+	if err != nil {
 		panic(err)
 	}
-}
-
-// 使用gnet作为网络实现
-func runGnetServer(address string) error {
-	logger.Info("run in gnet")
-	gnetServer := tcp.NewGnetServer()
-	return gnetServer.Serve("tcp://" + address)
+	if fileExists("redis.conf") {
+		config.SetUpConfig("redis.conf")
+	} else {
+		config.Properties = defaultConfig
+	}
+	gnetServer := tcp.NewGnetServer(lg)
+	address := fmt.Sprintf("tcp://%s:%d", config.Properties.Bind, config.Properties.Port)
+	if err = gnetServer.Serve(address); err != nil {
+		lg.Sugar().Errorf("start server failed with error: %v", err)
+	}
 }

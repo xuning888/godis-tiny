@@ -2,11 +2,11 @@ package database
 
 import (
 	"fmt"
-	"github.com/bytedance/gopkg/util/logger"
 	"godis-tiny/datastruct/dict"
 	"godis-tiny/datastruct/ttl"
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
+	"godis-tiny/pkg/logger"
 	"godis-tiny/redis/protocol"
 	"math/rand"
 	"strings"
@@ -102,7 +102,7 @@ func MakeSimpleSync(index int, checker database.IndexChecker, ttlChecker databas
 
 func (db *DB) Exec(c redis.Conn, lint *cmdLint) redis.Reply {
 	cmdName := lint.GetCmdName()
-	cmd := getCommand(cmdName)
+	cmd := cmdManager.getCmd(cmdName)
 	if cmd == nil {
 		return protocol.MakeStandardErrReply(fmt.Sprintf("ERR unknown command `%s`, with args beginning with: %s",
 			cmdName, strings.Join(lint.cmdString, ", ")))

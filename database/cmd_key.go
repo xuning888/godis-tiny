@@ -132,10 +132,34 @@ func execExpire(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeIntReply(1)
 }
 
+// execPersist persist key 移除key的过期时间
+func execPersist(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+
+	if argNum < 2 || argNum > 2 {
+		protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	expired, exists := ctx.GetDb().IsExpiredV1(key)
+	// key 不存在ttl
+	if !exists {
+		return protocol.MakeIntReply(0)
+	}
+	// key 已经过期
+	if expired {
+		return protocol.MakeIntReply(0)
+	}
+	// key 存在，并且没有过期，就移除他的ttl
+	ctx.GetDb().RemoveTTLV1(key)
+	return protocol.MakeIntReply(1)
+}
+
 func registerKeyCmd() {
-	RegisterCmd("del", execDel)
-	RegisterCmd("keys", execKeys)
-	RegisterCmd("exists", execExists)
-	RegisterCmd("ttl", execTTL)
-	RegisterCmd("expire", execExpire)
+	cmdManager.registerCmd("del", execDel)
+	cmdManager.registerCmd("keys", execKeys)
+	cmdManager.registerCmd("exists", execExists)
+	cmdManager.registerCmd("ttl", execTTL)
+	cmdManager.registerCmd("expire", execExpire)
+	cmdManager.registerCmd("persist", execPersist)
 }
