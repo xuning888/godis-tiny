@@ -37,13 +37,13 @@ func (q *QuickDequeue) AddLast(ele interface{}) error {
 	var segment Dequeue
 	if q.Len() == 0 {
 		segment = NewArrayDequeWithCap(segmentCapacity, false)
-		q.l.PushFront(segment)
+		q.l.PushBack(segment)
 	} else {
 		front := q.l.Front()
 		dequeue := front.Value.(Dequeue)
 		if dequeue.Len() == segmentCapacity {
 			segment = NewArrayDequeWithCap(segmentCapacity, false)
-			q.l.PushFront(segment)
+			q.l.PushBack(segment)
 		} else {
 			segment = dequeue
 		}
