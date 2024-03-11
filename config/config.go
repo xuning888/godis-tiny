@@ -2,9 +2,9 @@ package config
 
 import (
 	"bufio"
-	"godis-tiny/pkg/logger"
 	"godis-tiny/pkg/util"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -46,7 +46,7 @@ func parse(src io.Reader) *ServerProperties {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		logger.Fatal(err)
+		log.Fatal(err)
 	}
 
 	// parse format

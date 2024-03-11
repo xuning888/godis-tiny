@@ -137,3 +137,7 @@ func (n *NumberOfArgsErrReply) ToBytes() []byte {
 	errMsg := fmt.Sprintf("ERR wrong number of arguments for '%s' command", n.cmdName)
 	return MakeStandardErrReply(errMsg).ToBytes()
 }
+
+func IsErrorReply(reply redis.Reply) bool {
+	return reply.ToBytes()[0] == '-'
+}

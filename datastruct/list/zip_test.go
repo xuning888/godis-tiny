@@ -8,20 +8,20 @@ import (
 func Test_Quick_AddFirst(t *testing.T) {
 	testCassses := []struct {
 		name        string
-		deque       *QuickDequeue
+		deque       *ZipQueue
 		loopNum     int
 		expectedErr error
 		expectedLen int
 	}{
 		{
 			name:        "向尾部添加，并对比元素数量",
-			deque:       NewQuickDequeue(),
+			deque:       NewZipQueue(),
 			loopNum:     1 << 16,
 			expectedLen: 1 << 16,
 		},
 		{
 			name:        "向末尾添加，直到达到队列的最大容量",
-			deque:       NewQuickDequeue(),
+			deque:       NewZipQueue(),
 			loopNum:     (1 << 30) + 1,
 			expectedErr: ErrorOutOfCapacity,
 			expectedLen: (1 << 30) - 1,

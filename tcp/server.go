@@ -3,6 +3,7 @@ package tcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/panjf2000/gnet/v2"
 	"go.uber.org/zap"
 	"godis-tiny/database"
@@ -13,7 +14,9 @@ import (
 	"godis-tiny/redis/connection"
 	"godis-tiny/redis/parser"
 	"godis-tiny/redis/protocol"
+	"golang.org/x/sys/unix"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,7 +31,7 @@ var defaultTimeout = 60
 type GnetServer struct {
 	activateMap map[gnet.Conn]redis.Conn
 	dbEngine    database2.DBEngine
-	logger      *zap.SugaredLogger
+	logger      *zap.Logger
 }
 
 func (g *GnetServer) Serve(address string) error {
@@ -42,18 +45,24 @@ func (g *GnetServer) Serve(address string) error {
 		// socket 60不活跃就会被驱逐
 		gnet.WithTCPKeepAlive(time.Second*time.Duration(defaultTimeout)),
 		gnet.WithReusePort(true),
-		gnet.WithLogger(g.logger),
+		gnet.WithLogger(g.logger.Named("gnet").Sugar()),
+		// 使用最少连接的负载均衡算法为eventLoop分配conn
+		gnet.WithLoadBalancing(gnet.LeastConnections),
 	)
 	return err
 }
 
-func NewGnetServer(lg *zap.Logger) *GnetServer {
+func NewGnetServer() (*GnetServer, error) {
+	lg, err := logger.CreateLogger(logger.DefaultLevel)
+	if err != nil {
+		return nil, err
+	}
 	dbEngine := database.MakeStandalone()
 	return &GnetServer{
 		activateMap: make(map[gnet.Conn]redis.Conn),
 		dbEngine:    dbEngine,
-		logger:      lg.Sugar(),
-	}
+		logger:      lg.Named("tcp-Server"),
+	}, nil
 }
 
 func (g *GnetServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
@@ -70,29 +79,42 @@ func (g *GnetServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
 func (g *GnetServer) OnShutdown(eng gnet.Engine) {
 	g.logger.Info("on shutdown call back....")
 	_ = g.dbEngine.Close()
+	_ = g.logger.Sync()
 }
 
 func (g *GnetServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
-	g.logger.Infof("accept conn: %v", c.RemoteAddr())
+	g.logger.Sugar().Infof("accept conn: %v", c.RemoteAddr())
 	redisConn := connection.NewConn(c, false)
 	g.activateMap[c] = redisConn
 	return nil, gnet.None
 }
 
 func (g *GnetServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
-	g.logger.Infof("conn: %v, closed", c.RemoteAddr())
+	if err != nil {
+		if errors.Is(err, unix.ECONNRESET) {
+			g.logger.Sugar().Infof("conn: %v, closed", c.RemoteAddr())
+		} else {
+			g.logger.Sugar().Errorf("conn: %v, closed with error: %v", c.RemoteAddr(), err)
+		}
+	}
 	delete(g.activateMap, c)
 	return gnet.None
 }
 
 func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
+	buf, err := c.Next(-1)
+	if err != nil {
+		return gnet.Close
+	}
+	fmt.Println(buf)
 	payload := parser.Decode(c)
 	if payload.Error != nil {
 		if errors.Is(payload.Error, io.EOF) ||
 			errors.Is(payload.Error, io.ErrUnexpectedEOF) {
-			g.logger.Errorf("[%v] connection read payload has error", c.RemoteAddr())
+			g.logger.Sugar().Errorf("[%v] connection read payload has error", c.RemoteAddr())
 			return gnet.Close
 		}
+		g.logger.Sugar().Errorf("decode stream failed with error: %v", payload.Error)
 		// 协议中的错误
 		errReply := protocol.MakeStandardErrReply(payload.Error.Error())
 		err2 := g.quickWrite(c, errReply.ToBytes())
@@ -135,38 +157,43 @@ func (g *GnetServer) listenCmdResAndWrite2Peer() {
 			select {
 			case cmdRes, ok := <-resEventChan:
 				if !ok {
+					g.logger.Sugar().Debug("stop listen cmdResQueue")
 					return
 				}
 				conn := cmdRes.GetConn()
 				if conn.IsInner() {
 					continue
 				}
-				g.asyncWrite(conn.GnetConn(), cmdRes.GetReply().ToBytes())
+				go func() {
+					gnetConn, bytes := conn.GnetConn(), cmdRes.GetReply().ToBytes()
+					g.asyncWrite(gnetConn, bytes)
+				}()
 			}
 		}
 	}()
 }
 
-func callback(c gnet.Conn, err error) error {
+func (g *GnetServer) callback(c gnet.Conn, err error) error {
 	if err != nil {
-		logger.Errorf("Async writing bytes to client has error: %v", err)
-		if closeErr := c.Close(); closeErr != nil {
-			logger.Errorf("Failed to close connection: %v", closeErr)
+		if errors.Is(err, net.ErrClosed) {
+			g.logger.Sugar().Errorf("Async write failed. conn has closed, err: %v", err)
+			return nil
 		}
-		return err
+		g.logger.Sugar().Errorf("%v Async write failed with err: %v", c, err)
 	}
 	return nil
 }
 
+// quickWrite  放在OnTraffic方法里边同步会写用的
 func (g *GnetServer) quickWrite(conn gnet.Conn, bytes []byte) error {
 	_, err := conn.Write(bytes)
 	if err != nil {
-		g.logger.Errorf("%v write bytes has error: %v", conn.RemoteAddr(), err)
+		g.logger.Sugar().Errorf("%v write bytes failed with error: %v", conn.RemoteAddr(), err)
 		return err
 	}
 	err = conn.Flush()
 	if err != nil {
-		g.logger.Errorf("%v flush bytes has error: %v", conn.RemoteAddr(), err)
+		g.logger.Sugar().Errorf("%v flush bytes failed with error: %v", conn.RemoteAddr(), err)
 		return err
 	}
 	return nil
@@ -174,23 +201,21 @@ func (g *GnetServer) quickWrite(conn gnet.Conn, bytes []byte) error {
 
 func (g *GnetServer) asyncWrite(c gnet.Conn, bytes []byte) {
 	var err error = nil
-	err = c.AsyncWrite(bytes, callback)
+	err = c.AsyncWrite(bytes, g.callback)
 	maxRetry := 3
 	for retry := 0; retry < maxRetry && err != nil; retry++ {
-		g.logger.Warnf("Retry attempt #%d to async write to client", retry+1)
-		err = c.AsyncWrite(bytes, callback)
+		g.logger.Sugar().Infof("Retry attempt #%d to async write to client", retry+1)
+		err = c.AsyncWrite(bytes, g.callback)
 	}
 	if err != nil {
-		g.logger.Errorf("Failed to async write to client after %d attempts", maxRetry)
+		g.logger.Sugar().Errorf("Failed to async write to client after %d attempts", maxRetry)
 	}
 }
-
-var systemCon = connection.NewConn(nil, true)
 
 // ttlHandle 检查和清理所有数据库的过期key
 // ttlops 指令是一个内部指令, 只能被内部client触发, 这个指令会检查并清理所有DB中的过期key
 func (g *GnetServer) ttlHandle() {
-	cmdReq := database2.MakeCmdReq(systemCon, util.ToCmdLine("ttlops"))
+	cmdReq := database2.MakeCmdReq(connection.SystemCon, util.ToCmdLine("ttlops"))
 	g.dbEngine.PushReqEvent(cmdReq)
 }
 
@@ -202,10 +227,10 @@ func (g *GnetServer) listenStopSignal(eng gnet.Engine) {
 		sig := <-sigCh
 		switch sig {
 		case syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
-			g.logger.Infof("signal: %v", sig)
+			g.logger.Sugar().Infof("signal: %v", sig)
 			err := eng.Stop(context.Background())
 			if err != nil {
-				g.logger.Error(err)
+				g.logger.Sugar().Error(err)
 			}
 		}
 	}()

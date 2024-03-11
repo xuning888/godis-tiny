@@ -8,10 +8,15 @@ import (
 
 var _ redis.Conn = &Conn{}
 
+var SystemCon = NewConn(nil, true)
+
 type Conn struct {
+	// index 正在操作的DB
 	index int
+	// inner 是否是内部链接
 	inner bool
-	conn  gnet.Conn
+	// conn gnet.conn
+	conn gnet.Conn
 }
 
 func (c *Conn) GnetConn() gnet.Conn {

@@ -21,6 +21,25 @@ func SetUpLogger(level zapcore.Level) (*zap.Logger, error) {
 	return logger, err
 }
 
+func SetUpLoggerv2(level zapcore.Level) (*zap.Logger, error) {
+	lg, err := zap.NewProduction()
+	if err != nil {
+		return nil, err
+	}
+	logger = lg
+	return lg, err
+}
+
+func CreateLogger(level zapcore.Level) (*zap.Logger, error) {
+	lgcfg := DefaultZapLoggerConfig
+	lgcfg.Level = zap.NewAtomicLevelAt(level)
+	lg, err := lgcfg.Build()
+	if err != nil {
+		return nil, err
+	}
+	return lg, err
+}
+
 var DefaultZapLoggerConfig = zap.Config{
 	Level:       zap.NewAtomicLevelAt(DefaultLevel),
 	Development: false,
@@ -51,7 +70,6 @@ var DefaultZapLoggerConfig = zap.Config{
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	},
 
-	// Use "/dev/null" to discard all
 	OutputPaths:      []string{"stderr"},
 	ErrorOutputPaths: []string{"stderr"},
 }

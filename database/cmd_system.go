@@ -33,19 +33,40 @@ func flushDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	db := ctx.GetDb()
 	if policy == flushSync {
 		db.Flush()
+		ctx.GetDb().addAof(lint.GetCmdLine())
 	} else {
 		go func() {
 			db.Flush()
+			ctx.GetDb().addAof(lint.GetCmdLine())
 		}()
 	}
+	return protocol.MakeOkReply()
+}
+
+func execQuit(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum != 0 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	/*redisConn := ctx.GetConn()
+	err := redisConn.GnetConn().Close()
+	if err != nil {
+		return protocol.MakeStandardErrReply(err.Error())
+	}*/
+	// todo
 	return protocol.MakeOkReply()
 }
 
 func clearTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	conn := ctx.GetConn()
 	if !conn.IsInner() {
+		cmdData := lint.GetCmdData()
+		with := make([]string, 0, len(cmdData))
+		for _, data := range cmdData {
+			with = append(with, "'"+string(data)+"'")
+		}
 		return protocol.MakeStandardErrReply(fmt.Sprintf("ERR unknown command `%s`, with args beginning with: %s",
-			lint.GetCmdName(), strings.Join(lint.cmdString, ", ")))
+			lint.GetCmdName(), strings.Join(with, ", ")))
 	}
 	// 检查并清理所有数据库的过期key
 	ctx.GetDb().ttlChecker.CheckAndClearDb()
@@ -53,6 +74,7 @@ func clearTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func registerSystemCmd() {
-	cmdManager.registerCmd("flushdb", flushDb)
-	cmdManager.registerCmd("ttlops", clearTTL)
+	cmdManager.registerCmd("flushdb", flushDb, writeOnly)
+	cmdManager.registerCmd("ttlops", clearTTL, readWrite)
+	cmdManager.registerCmd("quit", execQuit, readOnly)
 }

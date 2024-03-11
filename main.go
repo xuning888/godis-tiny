@@ -23,7 +23,7 @@ func fileExists(filename string) bool {
 }
 
 func main() {
-	lg, err := logger.SetUpLogger(logger.DefaultLevel)
+	_, err := logger.SetUpLoggerv2(logger.DefaultLevel)
 	if err != nil {
 		panic(err)
 	}
@@ -32,9 +32,13 @@ func main() {
 	} else {
 		config.Properties = defaultConfig
 	}
-	gnetServer := tcp.NewGnetServer(lg)
+	gnetServer, err := tcp.NewGnetServer()
+	if err != nil {
+		logger.Errorf("start server failed with error: %v", err)
+		return
+	}
 	address := fmt.Sprintf("tcp://%s:%d", config.Properties.Bind, config.Properties.Port)
 	if err = gnetServer.Serve(address); err != nil {
-		lg.Sugar().Errorf("start server failed with error: %v", err)
+		fmt.Printf("start server failed with error: %v\n", err)
 	}
 }

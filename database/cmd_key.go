@@ -2,6 +2,7 @@ package database
 
 import (
 	"godis-tiny/interface/redis"
+	"godis-tiny/pkg/util"
 	"godis-tiny/redis/protocol"
 	"math"
 	"path"
@@ -14,7 +15,7 @@ func execDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum < 1 {
 		// 错误参数
-		return protocol.MakeNumberOfArgsErrReply(lint.cmdName)
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
 	}
 	cmdData := lint.GetCmdData()
 	keys := make([]string, len(cmdData))
@@ -24,6 +25,7 @@ func execDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	db := ctx.GetDb()
 	deleted := db.Removes(keys...)
 	if deleted > 0 {
+		ctx.GetDb().addAof(lint.GetCmdLine())
 		return protocol.MakeIntReply(int64(deleted))
 	}
 	return protocol.MakeIntReply(0)
@@ -31,10 +33,11 @@ func execDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
 
 // execKeys keys pattern
 func execKeys(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	args := lint.GetCmdData()
-	if lint.GetArgNum() > 1 {
+	argNum := lint.GetArgNum()
+	if argNum < 1 || argNum > 1 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
 	}
+	args := lint.GetCmdData()
 	pattern := string(args[0])
 	keys := ctx.GetDb().data.Keys()
 	var matchedKeys []string
@@ -129,15 +132,15 @@ func execExpire(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	}
 	expireTime := time.Now().Add(time.Duration(ttl) * time.Second)
 	ctx.GetDb().ExpireV1(key, expireTime)
+	ctx.GetDb().addAof(util.MakeExpireCmd(key, expireTime))
 	return protocol.MakeIntReply(1)
 }
 
 // execPersist persist key 移除key的过期时间
 func execPersist(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
-
 	if argNum < 2 || argNum > 2 {
-		protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
 	}
 	cmdData := lint.GetCmdData()
 	key := string(cmdData[0])
@@ -152,14 +155,40 @@ func execPersist(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	}
 	// key 存在，并且没有过期，就移除他的ttl
 	ctx.GetDb().RemoveTTLV1(key)
+	// add aof
+	ctx.GetDb().addAof(lint.GetCmdLine())
+	return protocol.MakeIntReply(1)
+}
+
+// execExpireAt expireat key unix-time-seconds
+func execExpireAt(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 2 || argNum > 2 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	timestamp, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
+	if err != nil {
+		return protocol.MakeOutOfRangeOrNotInt()
+	}
+	_, exists := ctx.GetDb().GetEntity(key)
+	if !exists {
+		return protocol.MakeIntReply(0)
+	}
+	expireTime := time.Unix(timestamp, 0)
+	ctx.GetDb().ExpireV1(key, expireTime)
+	// add aof
+	ctx.GetDb().addAof(lint.GetCmdLine())
 	return protocol.MakeIntReply(1)
 }
 
 func registerKeyCmd() {
-	cmdManager.registerCmd("del", execDel)
-	cmdManager.registerCmd("keys", execKeys)
-	cmdManager.registerCmd("exists", execExists)
-	cmdManager.registerCmd("ttl", execTTL)
-	cmdManager.registerCmd("expire", execExpire)
-	cmdManager.registerCmd("persist", execPersist)
+	cmdManager.registerCmd("del", execDel, writeOnly)
+	cmdManager.registerCmd("keys", execKeys, readOnly)
+	cmdManager.registerCmd("exists", execExists, readOnly)
+	cmdManager.registerCmd("ttl", execTTL, readWrite)
+	cmdManager.registerCmd("expire", execExpire, readWrite)
+	cmdManager.registerCmd("persist", execPersist, readWrite)
+	cmdManager.registerCmd("expireat", execExpireAt, readWrite)
 }

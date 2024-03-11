@@ -16,6 +16,8 @@ type DBEngine interface {
 	PushReqEvent(req *CmdReq)
 	// DeliverResEvent 接收res的channel
 	DeliverResEvent() <-chan *CmdRes
+	// Exec 同步调用
+	Exec(req *CmdReq) *CmdRes
 }
 
 type IndexChecker interface {

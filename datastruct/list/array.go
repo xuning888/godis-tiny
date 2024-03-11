@@ -1,6 +1,9 @@
 package list
 
-import "errors"
+import (
+	"errors"
+	"godis-tiny/interface/redis"
+)
 
 var _ Dequeue = &ArrayDeque{}
 
@@ -31,7 +34,7 @@ func NewArrayDeque(growth bool) *ArrayDeque {
 }
 
 func NewArrayDequeWithCap(c int, growth bool) *ArrayDeque {
-	capacity := calculateCapacity(c)
+	capacity := calculateCapacity(c - 1)
 	return &ArrayDeque{
 		head:     0,
 		tail:     0,
@@ -189,6 +192,19 @@ func (a *ArrayDeque) ForEach(f func(value interface{}, index int) bool) {
 			break
 		}
 	}
+}
+
+func (a *ArrayDeque) Range(begin, end int, convert func(ele interface{}) redis.Reply) ([]redis.Reply, error) {
+	if begin < 0 || end >= a.Len() || begin > end {
+		return nil, ErrorOutIndex
+	}
+	n := end - begin + 1
+	res := make([]redis.Reply, 0, n)
+	for i := begin; i <= end; i++ {
+		value, _ := a.Get(i)
+		res = append(res, convert(value))
+	}
+	return res, nil
 }
 
 func (a *ArrayDeque) doubleCapacity() error {

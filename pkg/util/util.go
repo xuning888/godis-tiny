@@ -2,9 +2,10 @@ package util
 
 import (
 	"godis-tiny/interface/database"
-	"godis-tiny/pkg/logger"
 	"io"
+	"log"
 	"math/rand"
+	"strconv"
 	"time"
 )
 
@@ -27,6 +28,16 @@ func ToCmdLine(key string, args ...string) database.CmdLine {
 	return cmdLine
 }
 
+var expireat = []byte("expireat")
+
+func MakeExpireCmd(key string, expireAt time.Time) database.CmdLine {
+	args := make([][]byte, 3)
+	args[0] = expireat
+	args[1] = []byte(key)
+	args[2] = []byte(strconv.FormatInt(expireAt.Unix(), 10))
+	return args
+}
+
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 func RandStr(length int) string {
@@ -41,6 +52,6 @@ func RandStr(length int) string {
 func Close(closer io.Closer) {
 	err := closer.Close()
 	if err != nil {
-		logger.Errorf("close faild with error: %v", err)
+		log.Printf("close faild with error: %v\n", err)
 	}
 }

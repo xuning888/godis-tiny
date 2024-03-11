@@ -24,6 +24,10 @@ func (db *DB) getAsString(key string) ([]byte, protocol.ErrReply) {
 }
 
 func execGet(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 1 || argNum > 1 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
 	args := lint.GetCmdData()
 	key := string(args[0])
 	db := ctx.GetDb()
@@ -131,10 +135,13 @@ func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		if ttl != unlimitedTTL {
 			expireTime := time.Now().Add(time.Duration(ttl) * time.Millisecond)
 			db.ExpireV1(key, expireTime)
-			// TODO aof
+			db.addAof(lint.GetCmdLine())
+			// convert to expireat
+			expireAtCmd := util.MakeExpireCmd(key, expireTime)
+			db.addAof(expireAtCmd)
 		} else {
 			db.RemoveTTLV1(key)
-			// TODO aof
+			db.addAof(lint.GetCmdLine())
 		}
 		return protocol.MakeOkReply()
 	}
@@ -379,15 +386,15 @@ func execIncrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func registerStringCmd() {
-	cmdManager.registerCmd("set", execSet)
-	cmdManager.registerCmd("get", execGet)
-	cmdManager.registerCmd("getset", execGetSet)
-	cmdManager.registerCmd("incr", execIncr)
-	cmdManager.registerCmd("decr", execDecr)
-	cmdManager.registerCmd("setnx", execSetNx)
-	cmdManager.registerCmd("getrange", execGetRange)
-	cmdManager.registerCmd("mget", execMGet)
-	cmdManager.registerCmd("strlen", execStrLen)
-	cmdManager.registerCmd("getdel", execGetDel)
-	cmdManager.registerCmd("incrby", execIncrBy)
+	cmdManager.registerCmd("set", execSet, writeOnly)
+	cmdManager.registerCmd("get", execGet, readOnly)
+	cmdManager.registerCmd("getset", execGetSet, readWrite)
+	cmdManager.registerCmd("incr", execIncr, readWrite)
+	cmdManager.registerCmd("decr", execDecr, readWrite)
+	cmdManager.registerCmd("setnx", execSetNx, readWrite)
+	cmdManager.registerCmd("getrange", execGetRange, readOnly)
+	cmdManager.registerCmd("mget", execMGet, readOnly)
+	cmdManager.registerCmd("strlen", execStrLen, readOnly)
+	cmdManager.registerCmd("getdel", execGetDel, readWrite)
+	cmdManager.registerCmd("incrby", execIncrBy, readWrite)
 }

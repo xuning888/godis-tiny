@@ -14,7 +14,7 @@ func ping(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	} else if len(args) == 1 {
 		return protocol.MakeBulkReply(args[0])
 	} else {
-		return protocol.MakeNumberOfArgsErrReply(lint.cmdName)
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
 	}
 }
 
@@ -40,6 +40,6 @@ func selectDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func registerConnCmd() {
-	cmdManager.registerCmd("ping", ping)
-	cmdManager.registerCmd("select", selectDb)
+	cmdManager.registerCmd("ping", ping, readOnly)
+	cmdManager.registerCmd("select", selectDb, writeOnly)
 }

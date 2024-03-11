@@ -13,11 +13,39 @@ import (
 	"time"
 )
 
+type CmdLine = [][]byte
+
 // cmdLint database 内部流转的结构体，包含了客户端发送的命令名称和数据
 type cmdLint struct {
-	cmdName   string
-	cmdData   [][]byte
-	cmdString []string
+	name string
+	args [][]byte
+}
+
+func (lint *cmdLint) GetCmdName() string {
+	return lint.name
+}
+
+func (lint *cmdLint) GetCmdData() [][]byte {
+	return lint.args
+}
+
+func (lint *cmdLint) GetArgNum() int {
+	return len(lint.args)
+}
+
+func (lint *cmdLint) GetCmdLine() database.CmdLine {
+	line := make([][]byte, lint.GetArgNum()+1)
+	line[0] = []byte(lint.name)
+	copy(line[1:], lint.args)
+	return line
+}
+
+// parseToLint 将resp 协议的字节流转为为 database 内部流转的结构体
+func parseToLint(cmdLine database.CmdLine) *cmdLint {
+	return &cmdLint{
+		name: strings.ToLower(string(cmdLine[0])),
+		args: cmdLine[1:],
+	}
 }
 
 type CommandContext struct {
@@ -40,34 +68,10 @@ func MakeCommandContext(db *DB, conn redis.Conn) *CommandContext {
 	}
 }
 
-func (lint *cmdLint) GetCmdName() string {
-	return lint.cmdName
-}
-
-func (lint *cmdLint) GetCmdData() [][]byte {
-	return lint.cmdData
-}
-
-func (lint *cmdLint) GetArgNum() int {
-	return len(lint.cmdData)
-}
-
-// parseToLint 将resp 协议的字节流转为为 database 内部流转的结构体
-func parseToLint(cmdLine database.CmdLine) *cmdLint {
-	cmdName := strings.ToLower(string(cmdLine[0]))
-	cmdData := cmdLine[1:]
-	cmdString := make([]string, len(cmdData))
-	for i := 0; i < len(cmdData); i++ {
-		cmdString[i] = "'" + string(cmdData[i]) + "'"
-	}
-	return &cmdLint{
-		cmdName:   cmdName,
-		cmdData:   cmdData,
-		cmdString: cmdString,
-	}
-}
-
 type ExeFunc func(cmdCtx *CommandContext, cmdLint *cmdLint) redis.Reply
+
+func nothingTodo(line database.CmdLine) {
+}
 
 // DB 存储数据的DB
 type DB struct {
@@ -76,6 +80,7 @@ type DB struct {
 	ttlChecker   database.TTLChecker
 	data         dict.Dict
 	ttlCache     ttl.Cache
+	addAof       func(line database.CmdLine)
 }
 
 // MakeSimpleDb 使用map的实现，无锁结构
@@ -86,6 +91,7 @@ func MakeSimpleDb(index int, indexChecker database.IndexChecker, ttlChecker data
 		ttlChecker:   ttlChecker,
 		data:         dict.MakeSimpleDict(),
 		ttlCache:     ttl.MakeSimple(),
+		addAof:       nothingTodo,
 	}
 }
 
@@ -104,8 +110,13 @@ func (db *DB) Exec(c redis.Conn, lint *cmdLint) redis.Reply {
 	cmdName := lint.GetCmdName()
 	cmd := cmdManager.getCmd(cmdName)
 	if cmd == nil {
+		cmdData := lint.GetCmdData()
+		with := make([]string, 0, len(cmdData))
+		for _, data := range cmdData {
+			with = append(with, "'"+string(data)+"'")
+		}
 		return protocol.MakeStandardErrReply(fmt.Sprintf("ERR unknown command `%s`, with args beginning with: %s",
-			cmdName, strings.Join(lint.cmdString, ", ")))
+			cmdName, strings.Join(with, ", ")))
 	}
 	ctx := MakeCommandContext(db, c)
 	return cmd.exeFunc(ctx, lint)

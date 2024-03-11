@@ -1,5 +1,7 @@
 package list
 
+import "godis-tiny/interface/redis"
+
 type Dequeue interface {
 	AddFirst(ele interface{}) error
 	AddLast(ele interface{}) error
@@ -13,4 +15,6 @@ type Dequeue interface {
 	Len() int
 	// ForEach 遍历双端队列
 	ForEach(func(value interface{}, index int) bool)
+
+	Range(begin, end int, convert func(ele interface{}) redis.Reply) ([]redis.Reply, error)
 }
