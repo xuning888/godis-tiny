@@ -3,7 +3,6 @@ package tcp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/panjf2000/gnet/v2"
 	"go.uber.org/zap"
 	"godis-tiny/database"
@@ -102,11 +101,6 @@ func (g *GnetServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 }
 
 func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
-	buf, err := c.Next(-1)
-	if err != nil {
-		return gnet.Close
-	}
-	fmt.Println(buf)
 	payload := parser.Decode(c)
 	if payload.Error != nil {
 		if errors.Is(payload.Error, io.EOF) ||
