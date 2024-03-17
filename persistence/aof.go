@@ -99,6 +99,8 @@ func (a *aof) writeAof(p *payload) {
 	if p.cmdLine == nil || len(p.cmdLine) == 0 {
 		return
 	}
+	a.mux.Lock()
+	defer a.mux.Unlock()
 	if p.dbIndex != a.currentDb {
 		selectCmd := util.ToCmdLine("SELECT", strconv.Itoa(p.dbIndex))
 		selectData := protocol.MakeMultiBulkReply(selectCmd).ToBytes()

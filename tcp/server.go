@@ -31,6 +31,7 @@ type GnetServer struct {
 	activateMap map[gnet.Conn]redis.Conn
 	dbEngine    database2.DBEngine
 	logger      *zap.Logger
+	eng         gnet.Engine
 }
 
 func (g *GnetServer) Serve(address string) error {
@@ -57,15 +58,22 @@ func NewGnetServer() (*GnetServer, error) {
 		return nil, err
 	}
 	dbEngine := database.MakeStandalone()
-	return &GnetServer{
+	server := &GnetServer{
 		activateMap: make(map[gnet.Conn]redis.Conn),
 		dbEngine:    dbEngine,
 		logger:      lg.Named("tcp-Server"),
-	}, nil
+	}
+	redis.Counter = server
+	return server, nil
+}
+
+func (g *GnetServer) CountConnections() int {
+	return g.eng.CountConnections()
 }
 
 func (g *GnetServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
 	g.logger.Info("on boot call back....")
+	g.eng = eng
 	// 监听 kill -15 后关闭进程
 	g.listenStopSignal(eng)
 	// dbEngine做初始化

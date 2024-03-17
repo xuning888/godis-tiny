@@ -19,3 +19,9 @@ type Conn interface {
 	// GnetConn gnet的conn
 	GnetConn() gnet.Conn
 }
+
+var Counter ConnCounter = nil
+
+type ConnCounter interface {
+	CountConnections() int
+}

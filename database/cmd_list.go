@@ -258,6 +258,8 @@ func execRPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
 			return protocol.MakeStandardErrReply("ERR list is full")
 		}
 		length := dequeue.Len()
+		// aof
+		ctx.GetDb().addAof(lint.GetCmdLine())
 		return protocol.MakeIntReply(int64(length))
 	}
 
@@ -276,6 +278,8 @@ func execRPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return protocol.MakeStandardErrReply("ERR list is full")
 	}
 	length := dequeue.Len()
+	// aof
+	ctx.GetDb().addAof(lint.GetCmdLine())
 	return protocol.MakeIntReply(int64(length))
 }
 

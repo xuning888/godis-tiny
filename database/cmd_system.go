@@ -91,9 +91,23 @@ func clearTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeOkReply()
 }
 
+// execInfo
+func execInfo(ctx *CommandContext, lint *cmdLint) redis.Reply {
+
+	s := fmt.Sprintf("# Clients\r\n"+
+		"connected_clients:%d\r\n",
+		//"client_recent_max_input_buffer:%d\r\n"+
+		//"client_recent_max_output_buffer:%d\r\n"+
+		//"blocked_clients:%d\n",
+		redis.Counter.CountConnections(),
+	)
+	return protocol.MakeBulkReply([]byte(s))
+}
+
 func registerSystemCmd() {
 	cmdManager.registerCmd("flushdb", flushDb, writeOnly)
 	cmdManager.registerCmd("ttlops", clearTTL, readWrite)
 	cmdManager.registerCmd("quit", execQuit, readOnly)
 	cmdManager.registerCmd("memory", execMemory, readOnly)
+	cmdManager.registerCmd("info", execInfo, readOnly)
 }

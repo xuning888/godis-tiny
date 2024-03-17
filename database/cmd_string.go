@@ -161,6 +161,7 @@ func execSetNx(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	res := db.PutIfAbsent(key, &database.DataEntity{
 		Data: value,
 	})
+	ctx.GetDb().addAof(lint.GetCmdLine())
 	return protocol.MakeIntReply(int64(res))
 }
 
@@ -201,6 +202,7 @@ func execGetSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return reply
 	}
 	db.PutEntity(key, &database.DataEntity{Data: value})
+	ctx.GetDb().addAof(lint.GetCmdLine())
 	if oldValue != nil {
 		return protocol.MakeBulkReply(oldValue)
 	}
@@ -223,6 +225,7 @@ func execIncr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		db.PutEntity(key, &database.DataEntity{
 			Data: []byte("1"),
 		})
+		ctx.GetDb().addAof(lint.GetCmdLine())
 		return protocol.MakeIntReply(1)
 	} else if reply != nil {
 		return reply
@@ -236,6 +239,7 @@ func execIncr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		db.PutEntity(key, &database.DataEntity{
 			Data: []byte(valueStr),
 		})
+		ctx.GetDb().addAof(lint.GetCmdLine())
 		return protocol.MakeIntReply(value)
 	}
 }
@@ -253,6 +257,7 @@ func execDecr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return reply
 	} else if valueBytes == nil {
 		ctx.GetDb().PutEntity(key, &database.DataEntity{Data: []byte("-1")})
+		ctx.GetDb().addAof(lint.GetCmdLine())
 		return protocol.MakeIntReply(-1)
 	} else {
 		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
@@ -262,6 +267,7 @@ func execDecr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		value--
 		valueStr := strconv.FormatInt(value, 10)
 		ctx.GetDb().PutEntity(key, &database.DataEntity{Data: []byte(valueStr)})
+		ctx.GetDb().addAof(lint.GetCmdLine())
 		return protocol.MakeIntReply(value)
 	}
 }
@@ -348,6 +354,7 @@ func execGetDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return protocol.MakeNullBulkReply()
 	} else {
 		ctx.GetDb().Remove(key)
+		ctx.GetDb().addAof(lint.GetCmdLine())
 		return protocol.MakeBulkReply(valueBytes)
 	}
 }
@@ -371,6 +378,7 @@ func execIncrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		ctx.GetDb().PutEntity(key, &database.DataEntity{
 			Data: []byte(strconv.FormatInt(increment, 10)),
 		})
+		ctx.GetDb().addAof(lint.GetCmdLine())
 		return protocol.MakeIntReply(increment)
 	} else {
 		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
@@ -381,6 +389,7 @@ func execIncrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		ctx.GetDb().PutEntity(key, &database.DataEntity{
 			Data: []byte(strconv.FormatInt(value, 10)),
 		})
+		ctx.GetDb().addAof(lint.GetCmdLine())
 		return protocol.MakeIntReply(value)
 	}
 }

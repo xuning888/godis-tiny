@@ -59,12 +59,12 @@ func (c *Codec) Decode(conn gnet.Conn) ([]redis.Reply, error) {
 
 		decode, err := c.getDecode()
 		if err != nil {
-			return nil, handleDecodeError(err, nil)
+			return nil, handleDecodeError(err, nil, nil)
 		}
 
 		line, err := decode()
 		if err != nil {
-			return nil, handleDecodeError(err, &c.buf)
+			return nil, handleDecodeError(err, &c.buf, &c.argsBuf)
 		}
 
 		if line != nil {
@@ -98,12 +98,13 @@ func appendReply(reply []byte, replies []redis.Reply, c *Codec) []redis.Reply {
 	return replies
 }
 
-func handleDecodeError(err error, buf *buffer) error {
+func handleDecodeError(err error, buf *buffer, argsBuf *[][]byte) error {
 	// 如果err是 黏包/半包 就直接返回，否则就把接收到的包丢弃
 	if errors.Is(err, ErrIncompletePacket) {
 		return err
 	}
 	*buf = make(buffer, 0, 1<<16)
+	*argsBuf = make([][]byte, 0)
 	return err
 }
 
