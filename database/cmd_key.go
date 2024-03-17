@@ -40,27 +40,20 @@ func execKeys(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	args := lint.GetCmdData()
 	pattern := string(args[0])
 	keys := ctx.GetDb().data.Keys()
-	var matchedKeys []string
+	var matchedKeys [][]byte
 	for _, key := range keys {
 		matched, err := path.Match(pattern, key)
 		if err != nil {
 			return protocol.MakeStandardErrReply("ERR invalid pattern")
 		}
 		if matched {
-			matchedKeys = append(matchedKeys, key)
+			matchedKeys = append(matchedKeys, []byte(key))
 		}
 	}
-
 	if len(matchedKeys) == 0 {
 		return protocol.MakeEmptyMultiBulkReply()
 	}
-
-	replies := make([]redis.Reply, len(matchedKeys))
-	for i, key := range matchedKeys {
-		replies[i] = protocol.MakeBulkReply([]byte(key))
-	}
-
-	return protocol.MakeMultiRowReply(replies)
+	return protocol.MakeMultiBulkReply(matchedKeys)
 }
 
 // execExists

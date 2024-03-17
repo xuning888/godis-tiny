@@ -5,6 +5,7 @@ import (
 	"godis-tiny/datastruct/list"
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
+	"godis-tiny/pkg/util"
 	"godis-tiny/redis/protocol"
 	"strconv"
 )
@@ -150,21 +151,22 @@ func execLPop(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return protocol.MakeWrongTypeErrReply()
 	}
 	if count > 0 {
-		result := make([]redis.Reply, 0, count)
+		ccap := util.MinInt64(int64(dequeue.Len()), count)
+		result := make([][]byte, 0, ccap)
 		for i := 0; i < int(count); i++ {
 			pop, err := dequeue.RemoveFirst()
 			if err != nil && errors.Is(err, list.ErrorEmpty) {
 				ctx.GetDb().Remove(key)
 				break
 			}
-			result = append(result, protocol.MakeBulkReply(pop.([]byte)))
+			result = append(result, pop.([]byte))
 		}
 		if dequeue.Len() == 0 {
 			ctx.GetDb().Remove(key)
 		}
 		// aof
 		ctx.GetDb().addAof(lint.GetCmdLine())
-		return protocol.MakeMultiRowReply(result)
+		return protocol.MakeMultiBulkReply(result)
 	}
 
 	pop, err := dequeue.RemoveFirst()
@@ -175,6 +177,7 @@ func execLPop(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	if dequeue.Len() == 0 {
 		ctx.GetDb().Remove(key)
 	}
+	ctx.GetDb().addAof(lint.GetCmdLine())
 	return protocol.MakeBulkReply(pop.([]byte))
 }
 
@@ -299,19 +302,21 @@ func execRPop(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return protocol.MakeWrongTypeErrReply()
 	}
 	if count > 0 {
-		result := make([]redis.Reply, 0, count)
+		ccap := util.MinInt64(count, int64(dequeue.Len()))
+		result := make([][]byte, 0, ccap)
 		for i := 0; i < int(count); i++ {
 			pop, err := dequeue.RemoveLast()
 			if err != nil && errors.Is(err, list.ErrorEmpty) {
 				ctx.GetDb().Remove(key)
 				break
 			}
-			result = append(result, protocol.MakeBulkReply(pop.([]byte)))
+			result = append(result, pop.([]byte))
 		}
 		if dequeue.Len() == 0 {
 			ctx.GetDb().Remove(key)
 		}
-		return protocol.MakeMultiRowReply(result)
+		ctx.GetDb().addAof(lint.GetCmdLine())
+		return protocol.MakeMultiBulkReply(result)
 	}
 
 	pop, err := dequeue.RemoveLast()
@@ -322,6 +327,7 @@ func execRPop(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	if dequeue.Len() == 0 {
 		ctx.GetDb().Remove(key)
 	}
+	ctx.GetDb().addAof(lint.GetCmdLine())
 	return protocol.MakeBulkReply(pop.([]byte))
 }
 

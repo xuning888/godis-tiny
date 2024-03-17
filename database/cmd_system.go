@@ -43,6 +43,24 @@ func flushDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeOkReply()
 }
 
+func execMemory(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 2 || argNum > 2 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	option := strings.ToLower(string(lint.GetCmdData()[0]))
+	key := string(lint.GetCmdData()[1])
+	if option == "usage" {
+		dataEntity, exists := ctx.GetDb().GetEntity(key)
+		if !exists {
+			return protocol.MakeNullBulkReply()
+		}
+		bytes := dataEntity.Data.([]byte)
+		return protocol.MakeIntReply(int64(len(bytes)))
+	}
+	return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+}
+
 func execQuit(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	argNum := lint.GetArgNum()
 	if argNum != 0 {
@@ -77,4 +95,5 @@ func registerSystemCmd() {
 	cmdManager.registerCmd("flushdb", flushDb, writeOnly)
 	cmdManager.registerCmd("ttlops", clearTTL, readWrite)
 	cmdManager.registerCmd("quit", execQuit, readOnly)
+	cmdManager.registerCmd("memory", execMemory, readOnly)
 }

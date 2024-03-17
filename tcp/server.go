@@ -83,6 +83,7 @@ func (g *GnetServer) OnShutdown(eng gnet.Engine) {
 
 func (g *GnetServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	g.logger.Sugar().Infof("accept conn: %v", c.RemoteAddr())
+	c.SetContext(parser.NewCodecc())
 	redisConn := connection.NewConn(c, false)
 	g.activateMap[c] = redisConn
 	return nil, gnet.None
@@ -101,27 +102,21 @@ func (g *GnetServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 }
 
 func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
-	payload := parser.Decode(c)
-	if payload.Error != nil {
-		if errors.Is(payload.Error, io.EOF) ||
-			errors.Is(payload.Error, io.ErrUnexpectedEOF) {
-			g.logger.Sugar().Errorf("[%v] connection read payload has error", c.RemoteAddr())
+	codecc := c.Context().(*parser.Codec)
+	replies, err := codecc.Decode(c)
+	if err != nil {
+		if errors.Is(err, parser.ErrIncompletePacket) {
+			return gnet.None
+		}
+		g.logger.Sugar().Errorf("decode falied with error: %v", err)
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return gnet.Close
 		}
-		g.logger.Sugar().Errorf("decode stream failed with error: %v", payload.Error)
-		// 协议中的错误
-		errReply := protocol.MakeStandardErrReply(payload.Error.Error())
-		err2 := g.quickWrite(c, errReply.ToBytes())
-		if err2 != nil {
+		err = g.quickWrite(c, protocol.MakeStandardErrReply(err.Error()).ToBytes())
+		if err != nil {
+			g.logger.Sugar().Errorf("write to peer falied with error: %v", err)
 			return gnet.Close
 		}
-		return gnet.None
-	}
-	if payload.Data == nil {
-		return gnet.None
-	}
-	r, ok := payload.Data.(*protocol.MultiBulkReply)
-	if !ok {
 		return gnet.None
 	}
 	conn, ok := g.activateMap[c]
@@ -129,10 +124,17 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		conn = connection.NewConn(c, false)
 		g.activateMap[c] = conn
 	}
-	cmdReq := database2.MakeCmdReq(conn, r.Args)
-	// 推送命令到dbEngine
-	g.dbEngine.PushReqEvent(cmdReq)
-	return gnet.None
+	go func() {
+		for _, value := range replies {
+			r, ok := value.(*protocol.MultiBulkReply)
+			if !ok {
+				continue
+			}
+			cmdReq := database2.MakeCmdReq(conn, r.Args)
+			g.dbEngine.PushReqEvent(cmdReq)
+		}
+	}()
+	return
 }
 
 func (g *GnetServer) OnTick() (delay time.Duration, action gnet.Action) {
