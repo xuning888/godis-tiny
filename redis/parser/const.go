@@ -56,9 +56,6 @@ type MessageType struct {
 
 var (
 	UnknownCommand = &MessageType{value: '@', inline: true}
-	SimpleString   = &MessageType{value: '+', inline: true}
-	Error          = &MessageType{value: '-', inline: true}
-	Integer        = &MessageType{value: ':', inline: true}
 	BulkString     = &MessageType{value: '$', inline: false}
 	ArrayHeader    = &MessageType{value: '*', inline: false}
 )
@@ -76,12 +73,6 @@ func (m *MessageType) isInline() bool {
 
 func valueOf(b byte) *MessageType {
 	switch b {
-	case '+':
-		return SimpleString
-	case '-':
-		return Error
-	case ':':
-		return Integer
 	case '$':
 		return BulkString
 	case '*':
@@ -89,15 +80,4 @@ func valueOf(b byte) *MessageType {
 	default:
 		return UnknownCommand
 	}
-}
-
-func readFrom(buf []byte, decodeInlineCmd bool) (*MessageType, error) {
-	b := buf[0]
-	messageType := valueOf(b)
-	if messageType == UnknownCommand {
-		if !decodeInlineCmd {
-			return nil, ErrDisableDecodeInlineCmd
-		}
-	}
-	return messageType, nil
 }

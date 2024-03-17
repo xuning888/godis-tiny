@@ -124,16 +124,17 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		conn = connection.NewConn(c, false)
 		g.activateMap[c] = conn
 	}
-	go func() {
-		for _, value := range replies {
-			r, ok := value.(*protocol.MultiBulkReply)
-			if !ok {
-				continue
-			}
-			cmdReq := database2.MakeCmdReq(conn, r.Args)
-			g.dbEngine.PushReqEvent(cmdReq)
+	for _, value := range replies {
+		r, ok := value.(*protocol.MultiBulkReply)
+		if !ok {
+			reply := value.(*protocol.SimpleReply)
+			errReply := protocol.MakeUnknownCommand(string(reply.Arg))
+			_ = g.quickWrite(c, errReply.ToBytes())
+			continue
 		}
-	}()
+		cmdReq := database2.MakeCmdReq(conn, r.Args)
+		g.dbEngine.PushReqEvent(cmdReq)
+	}
 	return
 }
 

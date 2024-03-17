@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"godis-tiny/interface/redis"
+	"strings"
 )
 
 var (
@@ -147,4 +148,27 @@ func (n *NumberOfArgsErrReply) ToBytes() []byte {
 
 func IsErrorReply(reply redis.Reply) bool {
 	return reply.ToBytes()[0] == '-'
+}
+
+type UnknownCommand struct {
+	cmdName string
+	args    []string
+}
+
+func MakeUnknownCommand(cmdName string, args ...string) *UnknownCommand {
+	return &UnknownCommand{
+		cmdName: cmdName,
+		args:    args,
+	}
+}
+
+func (u *UnknownCommand) ToBytes() []byte {
+	var errMsg string
+	if u.args != nil {
+		argJoin := strings.Join(u.args, ", ")
+		errMsg = fmt.Sprintf("ERR unknown command '%s', with args beginning with: %v", u.cmdName, argJoin)
+	} else {
+		errMsg = fmt.Sprintf("ERR unknown command '%s', with args beginning with: ", u.cmdName)
+	}
+	return MakeStandardErrReply(errMsg).ToBytes()
 }

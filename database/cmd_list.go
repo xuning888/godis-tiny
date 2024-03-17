@@ -103,7 +103,7 @@ func execLPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		length := dequeue.Len()
 		return protocol.MakeIntReply(int64(length))
 	}
-	var dequeue list.Dequeue = list.NewZipQueue()
+	var dequeue list.Dequeue = list.NewArrayDeque(true)
 	var err error
 	var curIdx = 0
 	for idx, value := range cmdData[1:] {
@@ -222,13 +222,15 @@ func execLRange(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return protocol.MakeEmptyMultiBulkReply()
 	}
 
-	res, err := dequeue.Range(int(start), int(end), func(ele interface{}) redis.Reply {
-		return protocol.MakeBulkReply(ele.([]byte))
-	})
+	res := make([][]byte, 0, end-start+1)
+	for i := start; i <= end; i++ {
+		ele, _ := dequeue.Get(int(i))
+		res = append(res, ele.([]byte))
+	}
 	if err != nil {
 		return protocol.MakeStandardErrReply(err.Error())
 	}
-	return protocol.MakeMultiRowReply(res)
+	return protocol.MakeMultiBulkReply(res)
 }
 
 // execRPush RPUSH key element [element...]
@@ -259,7 +261,7 @@ func execRPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return protocol.MakeIntReply(int64(length))
 	}
 
-	var dequeue list.Dequeue = list.NewZipQueue()
+	var dequeue list.Dequeue = list.NewArrayDeque(true)
 	var err error
 	for _, value := range cmdData[1:] {
 		err = dequeue.AddLast(value)

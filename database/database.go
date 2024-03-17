@@ -1,7 +1,6 @@
 package database
 
 import (
-	"fmt"
 	"godis-tiny/datastruct/dict"
 	"godis-tiny/datastruct/ttl"
 	"godis-tiny/interface/database"
@@ -115,8 +114,7 @@ func (db *DB) Exec(c redis.Conn, lint *cmdLint) redis.Reply {
 		for _, data := range cmdData {
 			with = append(with, "'"+string(data)+"'")
 		}
-		return protocol.MakeStandardErrReply(fmt.Sprintf("ERR unknown command `%s`, with args beginning with: %s",
-			cmdName, strings.Join(with, ", ")))
+		return protocol.MakeUnknownCommand(cmdName, with...)
 	}
 	ctx := MakeCommandContext(db, c)
 	return cmd.exeFunc(ctx, lint)

@@ -28,6 +28,8 @@ func (b buffer) readableBytes() int {
 	return len(b)
 }
 
+type DecodeFunc func() ([]byte, error)
+
 type Codec struct {
 	// buf 缓存从客户端接收到的数据
 	buf buffer
@@ -89,23 +91,11 @@ func appendReply(reply []byte, replies []redis.Reply, c *Codec) []redis.Reply {
 		}
 	} else {
 		if reply != nil {
-			message := c.newRedisMessage(reply)
+			message := protocol.MakeSimpleReply(reply)
 			replies = append(replies, message)
 		}
 	}
 	return replies
-}
-
-func (c *Codec) newRedisMessage(line []byte) redis.Reply {
-	switch c.messageType {
-	case Integer:
-		number, _ := c.parserNumber(line)
-		return protocol.MakeIntReply(number)
-	case Error:
-		return protocol.MakeStandardErrReply(string(line[1:]))
-	default:
-		return protocol.MakeSimpleReply(line[1:])
-	}
 }
 
 func handleDecodeError(err error, buf *buffer) error {
@@ -117,7 +107,7 @@ func handleDecodeError(err error, buf *buffer) error {
 	return err
 }
 
-func (c *Codec) getDecode() (func() ([]byte, error), error) {
+func (c *Codec) getDecode() (DecodeFunc, error) {
 	switch c.state {
 	case DecodeType:
 		return c.decodeType, nil
@@ -139,10 +129,6 @@ func (c *Codec) decodeType() ([]byte, error) {
 	// 查看第一个字节
 	b := c.buf.readByte()
 	c.messageType = valueOf(b)
-	if c.messageType == UnknownCommand {
-
-		return nil, NewErrProtocol(fmt.Sprintf("unknown command: %v, with args beginning with:", b))
-	}
 	if c.messageType.isInline() {
 		c.state = DecodeInline
 	} else {
