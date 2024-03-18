@@ -1,8 +1,21 @@
 package database
 
 import (
+	"godis-tiny/datastruct/list"
 	"godis-tiny/interface/redis"
+	"strings"
 )
+
+type RType string
+
+var (
+	String RType = "String"
+	List   RType = "List"
+)
+
+func (t RType) ToLower() string {
+	return strings.ToLower(string(t))
+}
 
 type CmdLine = [][]byte
 
@@ -30,7 +43,30 @@ type TTLChecker interface {
 }
 
 type DataEntity struct {
+	Type RType
 	Data interface{}
+}
+
+func (d *DataEntity) Memory() int {
+	switch d.Type {
+	case List:
+		dequeue, ok := d.Data.(list.Dequeue)
+		if !ok {
+			return 0
+		}
+		mem := 0
+		dequeue.ForEach(func(value interface{}, index int) bool {
+			bytes := value.([]byte)
+			mem += len(bytes)
+			return true
+		})
+		return mem
+	case String:
+		bytes := d.Data.([]byte)
+		return len(bytes)
+	default:
+		return 0
+	}
 }
 
 type CmdReq struct {

@@ -114,6 +114,7 @@ func execLPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		curIdx = idx
 	}
 	ctx.GetDb().PutEntity(key, &database.DataEntity{
+		Type: database.List,
 		Data: dequeue,
 	})
 	if err != nil && errors.Is(err, list.ErrorOutOfCapacity) {
@@ -272,6 +273,7 @@ func execRPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		}
 	}
 	ctx.GetDb().PutEntity(key, &database.DataEntity{
+		Type: database.List,
 		Data: dequeue,
 	})
 	if err != nil && errors.Is(err, list.ErrorOutOfCapacity) {

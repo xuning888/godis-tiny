@@ -98,6 +98,7 @@ func (g *GnetServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 }
 
 func (g *GnetServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
+	defer g.logger.Sync()
 	if err != nil {
 		if errors.Is(err, unix.ECONNRESET) {
 			g.logger.Sugar().Infof("conn: %v, closed", c.RemoteAddr())
@@ -155,6 +156,7 @@ func (g *GnetServer) OnTick() (delay time.Duration, action gnet.Action) {
 // 这个方法使用了gnet的 AsyncWrite方法。AsyncWrite方法会将写任务排入asyncTaskQueue，然后交给eventLoop进行轮询执行。
 // 因此，这个方法在单协程上运行，其消费能力由eventLoop决定。
 func (g *GnetServer) listenCmdResAndWrite2Peer() {
+	g.logger.Sync()
 	g.logger.Info("start listen cmdResQueue")
 	resEventChan := g.dbEngine.DeliverResEvent()
 	go func() {

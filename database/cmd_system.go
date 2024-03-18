@@ -45,6 +45,7 @@ func flushDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func execMemory(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	// todo 计算的还不够准确
 	argNum := lint.GetArgNum()
 	if argNum < 2 || argNum > 2 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -56,10 +57,23 @@ func execMemory(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		if !exists {
 			return protocol.MakeNullBulkReply()
 		}
-		bytes := dataEntity.Data.([]byte)
-		return protocol.MakeIntReply(int64(len(bytes)))
+		memory := dataEntity.Memory()
+		return protocol.MakeIntReply(int64(memory))
 	}
 	return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+}
+
+func execType(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 1 || argNum > 1 {
+		return protocol.MakeUnknownCommand(lint.GetCmdName())
+	}
+	key := string(lint.GetCmdData()[0])
+	entity, exists := ctx.GetDb().GetEntity(key)
+	if !exists {
+		return protocol.MakeNullBulkReply()
+	}
+	return protocol.MakeSimpleReply([]byte(entity.Type.ToLower()))
 }
 
 func execQuit(ctx *CommandContext, lint *cmdLint) redis.Reply {
@@ -113,4 +127,5 @@ func registerSystemCmd() {
 	cmdManager.registerCmd("quit", execQuit, readOnly)
 	cmdManager.registerCmd("memory", execMemory, readOnly)
 	cmdManager.registerCmd("info", execInfo, readOnly)
+	cmdManager.registerCmd("type", execType, readOnly)
 }
