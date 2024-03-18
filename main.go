@@ -11,7 +11,7 @@ import (
 
 var defaultConfig = &config.ServerProperties{
 	Bind:           "0.0.0.0",
-	Port:           6279,
+	Port:           6389,
 	AppendOnly:     false,
 	AppendFilename: "",
 	RunID:          util.RandStr(40),
