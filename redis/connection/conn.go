@@ -10,6 +10,8 @@ var _ redis.Conn = &Conn{}
 
 var SystemCon = NewConn(nil, true)
 
+var ConnCounter redis.ConnCounter = nil
+
 type Conn struct {
 	// index 正在操作的DB
 	index int

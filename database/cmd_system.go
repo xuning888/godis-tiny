@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"godis-tiny/interface/redis"
+	"godis-tiny/redis/connection"
 	"godis-tiny/redis/protocol"
 	"strings"
 )
@@ -62,6 +63,7 @@ func execMemory(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 func execQuit(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	// todo
 	argNum := lint.GetArgNum()
 	if argNum != 0 {
 		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
@@ -94,12 +96,13 @@ func clearTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 // execInfo
 func execInfo(ctx *CommandContext, lint *cmdLint) redis.Reply {
 
+	// todo
 	s := fmt.Sprintf("# Clients\r\n"+
 		"connected_clients:%d\r\n",
 		//"client_recent_max_input_buffer:%d\r\n"+
 		//"client_recent_max_output_buffer:%d\r\n"+
 		//"blocked_clients:%d\n",
-		redis.Counter.CountConnections(),
+		connection.ConnCounter.CountConnections(),
 	)
 	return protocol.MakeBulkReply([]byte(s))
 }

@@ -63,7 +63,7 @@ func NewGnetServer() (*GnetServer, error) {
 		dbEngine:    dbEngine,
 		logger:      lg.Named("tcp-Server"),
 	}
-	redis.Counter = server
+	connection.ConnCounter = server
 	return server, nil
 }
 
