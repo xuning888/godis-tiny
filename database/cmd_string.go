@@ -5,6 +5,7 @@ import (
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/util"
 	"godis-tiny/redis/protocol"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -237,6 +238,9 @@ func execIncr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		if err != nil {
 			return protocol.MakeOutOfRangeOrNotInt()
 		}
+		if math.MaxInt64-1 < value {
+			return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
+		}
 		value++
 		valueStr := strconv.FormatInt(value, 10)
 		db.PutEntity(key, &database.DataEntity{
@@ -267,6 +271,9 @@ func execDecr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
 		if err != nil {
 			return protocol.MakeOutOfRangeOrNotInt()
+		}
+		if math.MinInt64+1 > value {
+			return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
 		}
 		value--
 		valueStr := strconv.FormatInt(value, 10)
@@ -390,7 +397,49 @@ func execIncrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		if err != nil {
 			return protocol.MakeOutOfRangeOrNotInt()
 		}
+		if math.MaxInt64-increment < value {
+			return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
+		}
 		value += increment
+		ctx.GetDb().PutEntity(key, &database.DataEntity{
+			Type: database.String,
+			Data: []byte(strconv.FormatInt(value, 10)),
+		})
+		ctx.GetDb().addAof(lint.GetCmdLine())
+		return protocol.MakeIntReply(value)
+	}
+}
+
+func execDecrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
+	argNum := lint.GetArgNum()
+	if argNum < 2 || argNum > 2 {
+		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	}
+	cmdData := lint.GetCmdData()
+	key := string(cmdData[0])
+	decrement, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
+	if err != nil {
+		return protocol.MakeOutOfRangeOrNotInt()
+	}
+	valueBytes, reply := ctx.GetDb().getAsString(key)
+	if reply != nil {
+		return reply
+	} else if valueBytes == nil {
+		ctx.GetDb().PutEntity(key, &database.DataEntity{
+			Type: database.String,
+			Data: []byte(strconv.FormatInt(decrement, 10)),
+		})
+		ctx.GetDb().addAof(lint.GetCmdLine())
+		return protocol.MakeIntReply(decrement)
+	} else {
+		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
+		if err != nil {
+			return protocol.MakeOutOfRangeOrNotInt()
+		}
+		if math.MinInt64+decrement > value {
+			return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
+		}
+		value -= decrement
 		ctx.GetDb().PutEntity(key, &database.DataEntity{
 			Type: database.String,
 			Data: []byte(strconv.FormatInt(value, 10)),
@@ -412,4 +461,5 @@ func registerStringCmd() {
 	cmdManager.registerCmd("strlen", execStrLen, readOnly)
 	cmdManager.registerCmd("getdel", execGetDel, readWrite)
 	cmdManager.registerCmd("incrby", execIncrBy, readWrite)
+	cmdManager.registerCmd("decrby", execDecrBy, readWrite)
 }
