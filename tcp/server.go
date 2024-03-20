@@ -14,7 +14,6 @@ import (
 	"godis-tiny/redis/parser"
 	"godis-tiny/redis/protocol"
 	"golang.org/x/sys/unix"
-	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -112,21 +111,23 @@ func (g *GnetServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 
 func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	codecc := c.Context().(*parser.Codec)
-	replies, err := codecc.Decode(c)
+	data, err := c.Next(-1)
+	if err != nil {
+		g.logger.Sugar().Errorf("read data faild with error: %v", err)
+		return gnet.Close
+	}
+	replies, err := codecc.Decode(data)
 	if err != nil {
 		if errors.Is(err, parser.ErrIncompletePacket) {
 			return gnet.None
 		}
 		g.logger.Sugar().Errorf("decode falied with error: %v", err)
-		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return gnet.Close
-		}
 		err = g.quickWrite(c, protocol.MakeStandardErrReply(err.Error()).ToBytes())
 		if err != nil {
 			g.logger.Sugar().Errorf("write to peer falied with error: %v", err)
 			return gnet.Close
 		}
-		return gnet.None
+		return gnet.Close
 	}
 	conn, ok := g.activateMap[c]
 	if !ok {

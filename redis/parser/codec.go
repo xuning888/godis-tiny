@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/panjf2000/gnet/v2"
 	"godis-tiny/interface/redis"
 	"godis-tiny/redis/protocol"
 	"strconv"
@@ -17,7 +16,7 @@ func (b buffer) isReadable() bool {
 }
 
 func (b buffer) isReadableWithN(n int) bool {
-	return len(b) > n
+	return len(b) >= n
 }
 
 func (b buffer) readByte() byte {
@@ -47,24 +46,19 @@ type Codec struct {
 	argsBuf [][]byte
 }
 
-func (c *Codec) Decode(conn gnet.Conn) ([]redis.Reply, error) {
-	data, err := conn.Next(-1)
-	if err != nil {
-		return nil, err
-	}
+func (c *Codec) Decode(data []byte) ([]redis.Reply, error) {
 	c.buf = append(c.buf, data...)
 	replies := make([]redis.Reply, 0)
-	// 至少得有4个字节，才是可读的
-	for c.buf.isReadableWithN(4) {
-
+	// 至少得有3个字节，才是可读的
+	for c.buf.isReadable() {
 		decode, err := c.getDecode()
 		if err != nil {
-			return nil, handleDecodeError(err, nil, nil)
+			return nil, handleDecodeError(err, c)
 		}
 
 		line, err := decode()
 		if err != nil {
-			return nil, handleDecodeError(err, &c.buf, &c.argsBuf)
+			return nil, handleDecodeError(err, c)
 		}
 
 		if line != nil {
@@ -98,13 +92,14 @@ func appendReply(reply []byte, replies []redis.Reply, c *Codec) []redis.Reply {
 	return replies
 }
 
-func handleDecodeError(err error, buf *buffer, argsBuf *[][]byte) error {
+func handleDecodeError(err error, c *Codec) error {
 	// 如果err是 黏包/半包 就直接返回，否则就把接收到的包丢弃
 	if errors.Is(err, ErrIncompletePacket) {
 		return err
 	}
-	*buf = make(buffer, 0, 1<<16)
-	*argsBuf = make([][]byte, 0)
+	c.resetDecoder()
+	c.buf = make(buffer, 0, 1<<16)
+	c.argsBuf = make([][]byte, 0)
 	return err
 }
 
@@ -188,9 +183,15 @@ func (c *Codec) decodeBulkString() ([]byte, error) {
 		c.state = DecodeBulkStringContent
 		return nil, ErrIncompletePacket
 	}
-	line := make([]byte, c.remainingBulkLength)
-	copy(line, c.buf[:c.remainingBulkLength])
-	c.buf = c.buf[c.remainingBulkLength:]
+
+	var line []byte
+	if c.remainingBulkLength == 0 {
+		line = make([]byte, 0)
+	} else {
+		line = make([]byte, c.remainingBulkLength)
+		copy(line, c.buf[:c.remainingBulkLength])
+		c.buf = c.buf[c.remainingBulkLength:]
+	}
 	if err := c.readEndOfLine(); err != nil {
 		return nil, err
 	}
@@ -199,7 +200,7 @@ func (c *Codec) decodeBulkString() ([]byte, error) {
 }
 
 func (c *Codec) readLine() ([]byte, error) {
-	// 至少得有2个字节可读
+	// $0\r\n\r\n
 	if !c.buf.isReadableWithN(2) {
 		return nil, ErrIncompletePacket
 	}
@@ -224,7 +225,7 @@ func (c *Codec) readEndOfLine() error {
 		c.buf = c.buf[2:]
 		return nil
 	}
-	return NewErrProtocol(fmt.Sprintf("expected: '\\r\\n',got'%v%v'", c.buf[0], c.buf[1]))
+	return NewErrProtocol(fmt.Sprintf("expected: '\\r\\n',got'%v, %v'", c.buf[0], c.buf[1]))
 }
 
 func (c *Codec) parserNumber(buf []byte) (int64, error) {
