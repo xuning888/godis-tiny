@@ -29,6 +29,12 @@ func (b buffer) readableBytes() int {
 
 type DecodeFunc func() ([]byte, error)
 
+// Codec RESP2协议的codec
+// 参考了 netty RedisDecoder类的实现。
+// 对于redis服务端来说, 只需关注客户端发送来的 *(Array)和$(Bulk)。
+// 省去了对 +(simpleString) -(ERR) :(Integer)的支持。
+// + - : 都被认为是inline，然后返回 -ERR Protocol Unknown command <inline> with: <args> 给客户端，随后关闭连接。
+// todo buf的初始长度是64KB, 当bulk的长度是512M时, 会因为半包导致buf出现大量的扩容. 例如: set key value(512M) 可能占用2G内存。
 type Codec struct {
 	// buf 缓存从客户端接收到的数据
 	buf buffer
@@ -49,7 +55,7 @@ type Codec struct {
 func (c *Codec) Decode(data []byte) ([]redis.Reply, error) {
 	c.buf = append(c.buf, data...)
 	replies := make([]redis.Reply, 0)
-	// 至少得有3个字节，才是可读的
+
 	for c.buf.isReadable() {
 		decode, err := c.getDecode()
 		if err != nil {
@@ -219,7 +225,7 @@ func (c *Codec) readLine() ([]byte, error) {
 }
 
 func (c *Codec) readEndOfLine() error {
-	if c.buf.isReadable() && c.buf[0] == '\r' && c.buf[1] == '\n' {
+	if c.buf.isReadableWithN(2) && c.buf[0] == '\r' && c.buf[1] == '\n' {
 		c.buf = c.buf[2:]
 		return nil
 	}
