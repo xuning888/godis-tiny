@@ -69,8 +69,8 @@ func (c *Codec) Decode(data []byte) ([]redis.Reply, error) {
 }
 
 func appendReply(reply []byte, replies []redis.Reply, c *Codec) []redis.Reply {
-	if c.decodeForArray {
-		if reply != nil {
+	if reply != nil {
+		if c.decodeForArray {
 			c.argsBuf = append(c.argsBuf, reply)
 
 			if c.remainingBulkCount > 0 {
@@ -82,9 +82,7 @@ func appendReply(reply []byte, replies []redis.Reply, c *Codec) []redis.Reply {
 				replies = append(replies, protocol.MakeMultiBulkReply(c.argsBuf))
 				c.argsBuf = make([][]byte, 0)
 			}
-		}
-	} else {
-		if reply != nil {
+		} else {
 			message := protocol.MakeSimpleReply(reply)
 			replies = append(replies, message)
 		}
