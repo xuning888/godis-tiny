@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+var defaultMaxClients = 10000
+
 type ServerProperties struct {
 	RunID          string `cfg:"runid"`
 	Bind           string `cfg:"bind"`
@@ -20,6 +22,7 @@ type ServerProperties struct {
 	AppendOnly     bool   `cfg:"appendonly"`
 	AppendFilename string `cfg:"appendfilename"`
 	AppendFsync    string `cfg:"appendfsync"`
+	MaxClients     int    `cfg:"maxclients"`
 
 	// config file path
 	CfPath string `cfg:"cf,omitempty"`
@@ -97,6 +100,16 @@ func SetUpConfig(filename string) {
 	if err != nil {
 		return
 	}
+	maxClinets := Properties.MaxClients
+	if maxClinets == 0 {
+		maxClinets = defaultMaxClients
+	} else {
+		if maxClinets > defaultMaxClients {
+			maxClinets = defaultMaxClients
+		}
+	}
+	Properties.MaxClients = maxClinets
+
 	Properties.CfPath = configFilePath
 	if Properties.Dir == "" {
 		Properties.Dir = "."

@@ -1,10 +1,13 @@
 package database
 
 import (
+	"context"
 	"fmt"
+	"godis-tiny/config"
 	"godis-tiny/interface/redis"
 	"godis-tiny/redis/connection"
 	"godis-tiny/redis/protocol"
+	"log"
 	"strings"
 )
 
@@ -13,14 +16,14 @@ const (
 	flushSync
 )
 
-func flushDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func flushDb(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	var policy int
 	// 默认同步刷新
 	if argNum == 0 {
 		policy = flushSync
 	} else if argNum == 1 {
-		args := strings.ToUpper(string(lint.GetCmdData()[0]))
+		args := strings.ToUpper(string(ctx.GetArgs()[0]))
 		if args == "ASYNC" {
 			policy = flushAsync
 		} else if args == "SYNC" {
@@ -29,29 +32,30 @@ func flushDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
 			return protocol.MakeSyntaxReply()
 		}
 	} else {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
 	db := ctx.GetDb()
 	if policy == flushSync {
 		db.Flush()
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetArgs())
 	} else {
 		go func() {
 			db.Flush()
-			ctx.GetDb().addAof(lint.GetCmdLine())
+			ctx.GetDb().addAof(ctx.GetArgs())
 		}()
 	}
 	return protocol.MakeOkReply()
 }
 
-func execMemory(ctx *CommandContext, lint *cmdLint) redis.Reply {
+func execMemory(c context.Context, ctx *CommandContext) redis.Reply {
 	// todo 计算的还不够准确
-	argNum := lint.GetArgNum()
+	argNum := ctx.GetArgNum()
 	if argNum < 2 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	option := strings.ToLower(string(lint.GetCmdData()[0]))
-	key := string(lint.GetCmdData()[1])
+	args := ctx.GetArgs()
+	option := strings.ToLower(string(args[0]))
+	key := string(args[1])
 	if option == "usage" {
 		dataEntity, exists := ctx.GetDb().GetEntity(key)
 		if !exists {
@@ -60,15 +64,15 @@ func execMemory(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		memory := dataEntity.Memory()
 		return protocol.MakeIntReply(int64(memory))
 	}
-	return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+	return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 }
 
-func execType(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execType(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeUnknownCommand(lint.GetCmdName())
+		return protocol.MakeUnknownCommand(ctx.GetCmdName())
 	}
-	key := string(lint.GetCmdData()[0])
+	key := string(ctx.GetArgs()[0])
 	entity, exists := ctx.GetDb().GetEntity(key)
 	if !exists {
 		return protocol.MakeNullBulkReply()
@@ -76,31 +80,25 @@ func execType(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	return protocol.MakeSimpleReply([]byte(entity.Type.ToLower()))
 }
 
-func execQuit(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	// todo
-	argNum := lint.GetArgNum()
+// execQuit wait write and close
+func execQuit(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum != 0 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	/*redisConn := ctx.GetConn()
-	err := redisConn.GnetConn().Close()
-	if err != nil {
-		return protocol.MakeStandardErrReply(err.Error())
-	}*/
-	// todo
 	return protocol.MakeOkReply()
 }
 
-func clearTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
+func clearTTL(c context.Context, ctx *CommandContext) redis.Reply {
 	conn := ctx.GetConn()
 	if !conn.IsInner() {
-		cmdData := lint.GetCmdData()
+		cmdData := ctx.GetArgs()
 		with := make([]string, 0, len(cmdData))
 		for _, data := range cmdData {
 			with = append(with, "'"+string(data)+"'")
 		}
 		return protocol.MakeStandardErrReply(fmt.Sprintf("ERR unknown command `%s`, with args beginning with: %s",
-			lint.GetCmdName(), strings.Join(with, ", ")))
+			ctx.GetCmdName(), strings.Join(with, ", ")))
 	}
 	// 检查并清理所有数据库的过期key
 	ctx.GetDb().ttlChecker.CheckAndClearDb()
@@ -108,17 +106,28 @@ func clearTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 // execInfo
-func execInfo(ctx *CommandContext, lint *cmdLint) redis.Reply {
-
+func execInfo(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
+	if argNum > 1 {
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
+	}
 	// todo
-	s := fmt.Sprintf("# Clients\r\n"+
-		"connected_clients:%d\r\n",
-		//"client_recent_max_input_buffer:%d\r\n"+
-		//"client_recent_max_output_buffer:%d\r\n"+
-		//"blocked_clients:%d\n",
+	cmdData := ctx.GetArgs()
+	var logStr string
+	for _, data := range cmdData {
+		logStr += string(data)
+	}
+	log.Printf("info %s\n", logStr)
+	return protocol.MakeBulkReply([]byte(infoClients()))
+}
+
+func infoClients() string {
+	return fmt.Sprintf("# Clients\r\n"+
+		"connected_clients:%d\r\n"+
+		"maxclients:%d\r\n",
 		connection.ConnCounter.CountConnections(),
+		config.Properties.MaxClients,
 	)
-	return protocol.MakeBulkReply([]byte(s))
 }
 
 func registerSystemCmd() {

@@ -57,13 +57,7 @@ func (b *BulkReply) ToBytes() []byte {
 	if b.Arg == nil {
 		return NullBulkReplyBytes
 	}
-	//return []byte(fmt.Sprintf("$%d%s%s%s", len(b.Arg), CRLF, string(b.Arg), CRLF))
-	argg := make([]byte, 0, len(b.Arg)+20)
-	argg = append(argg, []byte(fmt.Sprintf("$%d", len(b.Arg)))...)
-	argg = append(argg, CRLFBytes...)
-	argg = append(argg, b.Arg...)
-	argg = append(argg, CRLFBytes...)
-	return argg
+	return []byte(fmt.Sprintf("$%d%s%s%s", len(b.Arg), CRLF, string(b.Arg), CRLF))
 }
 
 func MakeBulkReply(arg []byte) *BulkReply {

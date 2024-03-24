@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"errors"
 	"godis-tiny/datastruct/list"
 	"godis-tiny/interface/database"
@@ -11,12 +12,12 @@ import (
 )
 
 // execLLen llen mylist
-func execLLen(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execLLen(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	entity, exists := ctx.GetDb().GetEntity(key)
 	if !exists {
@@ -36,12 +37,12 @@ func execLLen(ctx *CommandContext, lint *cmdLint) redis.Reply {
 // The index is zero-based, so 0 means the first element, 1 the second element and so on.
 // Negative indices can be used to designate elements starting at the tail of the list.
 // Here, -1 means the last element, -2 means the penultimate and so forth.
-func execLIndex(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execLIndex(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	entity, exists := ctx.GetDb().GetEntity(key)
 	if !exists {
@@ -66,17 +67,17 @@ func execLIndex(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 // execLInsert LINSERT key <BEFORE | AFTER> pivot element
-func execLInsert(ctx *CommandContext, lint *cmdLint) redis.Reply {
+func execLInsert(c context.Context, ctx *CommandContext) redis.Reply {
 	return nil
 }
 
 // execLPush lpush key element [elements...]
-func execLPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execLPush(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	entity, exists := ctx.GetDb().GetEntity(key)
 	if exists {
@@ -95,11 +96,11 @@ func execLPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		}
 		if err != nil && errors.Is(err, list.ErrorOutOfCapacity) {
 			// aof
-			ctx.GetDb().addAof(lint.GetCmdLine()[:curIdx+1])
+			ctx.GetDb().addAof(util.ToCmdLine2(key, cmdData[:curIdx+1]))
 			return protocol.MakeStandardErrReply("ERR list is full")
 		}
 		// aof
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		length := dequeue.Len()
 		return protocol.MakeIntReply(int64(length))
 	}
@@ -118,22 +119,22 @@ func execLPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		Data: dequeue,
 	})
 	if err != nil && errors.Is(err, list.ErrorOutOfCapacity) {
-		ctx.GetDb().addAof(lint.GetCmdLine()[:curIdx+1])
+		ctx.GetDb().addAof(util.ToCmdLine2(key, cmdData[:curIdx+1]))
 		return protocol.MakeStandardErrReply("ERR list is full")
 	}
 	// aof
-	ctx.GetDb().addAof(lint.GetCmdLine())
+	ctx.GetDb().addAof(ctx.GetCmdLine())
 	length := dequeue.Len()
 	return protocol.MakeIntReply(int64(length))
 }
 
 // execLPop lpop key [count]
-func execLPop(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execLPop(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	entity, exists := ctx.GetDb().GetEntity(key)
 	if !exists {
@@ -166,7 +167,7 @@ func execLPop(ctx *CommandContext, lint *cmdLint) redis.Reply {
 			ctx.GetDb().Remove(key)
 		}
 		// aof
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeMultiBulkReply(result)
 	}
 
@@ -178,17 +179,17 @@ func execLPop(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	if dequeue.Len() == 0 {
 		ctx.GetDb().Remove(key)
 	}
-	ctx.GetDb().addAof(lint.GetCmdLine())
+	ctx.GetDb().addAof(ctx.GetCmdLine())
 	return protocol.MakeBulkReply(pop.([]byte))
 }
 
 // execLRange lrange key start stop
-func execLRange(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execLRange(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 3 || argNum > 3 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	start, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
 	if err != nil {
@@ -235,12 +236,12 @@ func execLRange(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 // execRPush RPUSH key element [element...]
-func execRPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execRPush(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	entity, exists := ctx.GetDb().GetEntity(key)
 	if exists {
@@ -260,7 +261,7 @@ func execRPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		}
 		length := dequeue.Len()
 		// aof
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(int64(length))
 	}
 
@@ -281,17 +282,17 @@ func execRPush(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	}
 	length := dequeue.Len()
 	// aof
-	ctx.GetDb().addAof(lint.GetCmdLine())
+	ctx.GetDb().addAof(ctx.GetCmdLine())
 	return protocol.MakeIntReply(int64(length))
 }
 
 // execRPop rpop key [count]
-func execRPop(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execRPop(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	entity, exists := ctx.GetDb().GetEntity(key)
 	if !exists {
@@ -323,7 +324,7 @@ func execRPop(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		if dequeue.Len() == 0 {
 			ctx.GetDb().Remove(key)
 		}
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeMultiBulkReply(result)
 	}
 
@@ -335,7 +336,7 @@ func execRPop(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	if dequeue.Len() == 0 {
 		ctx.GetDb().Remove(key)
 	}
-	ctx.GetDb().addAof(lint.GetCmdLine())
+	ctx.GetDb().addAof(ctx.GetCmdLine())
 	return protocol.MakeBulkReply(pop.([]byte))
 }
 

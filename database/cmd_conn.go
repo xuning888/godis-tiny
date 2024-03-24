@@ -1,32 +1,33 @@
 package database
 
 import (
+	"context"
 	"godis-tiny/interface/redis"
 	"godis-tiny/redis/protocol"
 	"strconv"
 )
 
 // ping exc ping reply pong
-func ping(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	args := lint.GetCmdData()
+func ping(c context.Context, ctx *CommandContext) redis.Reply {
+	args := ctx.GetArgs()
 	if len(args) == 0 {
 		return protocol.MakePongReply()
 	} else if len(args) == 1 {
 		return protocol.MakeBulkReply(args[0])
 	} else {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
 }
 
 // selectDb
-func selectDb(ctx *CommandContext, lint *cmdLint) redis.Reply {
+func selectDb(c context.Context, ctx *CommandContext) redis.Reply {
 	db := ctx.GetDb()
 	conn := ctx.GetConn()
-	argNum := lint.GetArgNum()
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	index, err := strconv.Atoi(string(cmdData[0]))
 	if err != nil {
 		return protocol.MakeOutOfRangeOrNotInt()

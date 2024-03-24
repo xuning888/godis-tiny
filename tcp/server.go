@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/panjf2000/gnet/v2"
 	"go.uber.org/zap"
+	"godis-tiny/config"
 	"godis-tiny/database"
 	database2 "godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
@@ -27,16 +28,17 @@ var defaultTimeout = 60
 
 // GnetServer 使用https://github.com/panjf2000/gnet作为网络实现
 type GnetServer struct {
-	activateMap map[gnet.Conn]redis.Conn
 	dbEngine    database2.DBEngine
 	logger      *zap.Logger
 	eng         gnet.Engine
+	connManager redis.ConnManager
 }
 
 func (g *GnetServer) Serve(address string) error {
 	err := gnet.Run(
 		g,
 		address,
+		gnet.WithReadBufferCap(1<<18),
 		// 启用多核心, 开启后NumEventLoops = coreSize
 		gnet.WithMulticore(true),
 		// 启用定时任务
@@ -58,16 +60,13 @@ func NewGnetServer() (*GnetServer, error) {
 	}
 	dbEngine := database.MakeStandalone()
 	server := &GnetServer{
-		activateMap: make(map[gnet.Conn]redis.Conn),
-		dbEngine:    dbEngine,
-		logger:      lg.Named("tcp-Server"),
+		dbEngine: dbEngine,
+		logger:   lg.Named("tcp-Server"),
 	}
-	connection.ConnCounter = server
+	connManager := connection.NewConnManager()
+	server.connManager = connManager
+	connection.ConnCounter = connManager
 	return server, nil
-}
-
-func (g *GnetServer) CountConnections() int {
-	return g.eng.CountConnections()
 }
 
 func (g *GnetServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
@@ -89,10 +88,21 @@ func (g *GnetServer) OnShutdown(eng gnet.Engine) {
 }
 
 func (g *GnetServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
+	defer g.logger.Sync()
+
+	connectedClients := connection.ConnCounter.CountConnections()
+	maxClients := config.Properties.MaxClients
+
+	// 如果连接数达到了最大值, 就拒绝连接
+	if connectedClients >= maxClients {
+		g.logger.Sugar().Infof("max number of clients reached. clients_connected: %v, maxclinets: %v",
+			connectedClients, maxClients)
+		return protocol.MakeStandardErrReply("ERR max number of clients reached").ToBytes(), gnet.Close
+	}
 	g.logger.Sugar().Infof("accept conn: %v", c.RemoteAddr())
-	c.SetContext(parser.NewCodecc())
-	redisConn := connection.NewConn(c, false)
-	g.activateMap[c] = redisConn
+	codec := parser.NewCodec()
+	c.SetContext(codec)
+	g.connManager.RegisterConn(c.RemoteAddr().String(), connection.NewConn(c, false))
 	return nil, gnet.None
 }
 
@@ -105,11 +115,12 @@ func (g *GnetServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 			g.logger.Sugar().Errorf("conn: %v, closed with error: %v", c.RemoteAddr(), err)
 		}
 	}
-	delete(g.activateMap, c)
+	g.connManager.RemoveConnByKey(c.RemoteAddr().String())
 	return gnet.None
 }
 
 func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
+	conn := g.connManager.Get(c.RemoteAddr().String())
 	codecc := c.Context().(*parser.Codec)
 	data, err := c.Next(-1)
 	if err != nil {
@@ -128,11 +139,6 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 			return gnet.Close
 		}
 		return gnet.Close
-	}
-	conn, ok := g.activateMap[c]
-	if !ok {
-		conn = connection.NewConn(c, false)
-		g.activateMap[c] = conn
 	}
 	for _, value := range replies {
 		r, ok := value.(*protocol.MultiBulkReply)
@@ -154,10 +160,8 @@ func (g *GnetServer) OnTick() (delay time.Duration, action gnet.Action) {
 }
 
 // listenCmdResAndWrite2Peer 监听dbEngine的命令消费结果, 然后写回去给客户端。
-// 这个方法使用了gnet的 AsyncWrite方法。AsyncWrite方法会将写任务排入asyncTaskQueue，然后交给eventLoop进行轮询执行。
-// 因此，这个方法在单协程上运行，其消费能力由eventLoop决定。
 func (g *GnetServer) listenCmdResAndWrite2Peer() {
-	g.logger.Sync()
+	defer g.logger.Sync()
 	g.logger.Info("start listen cmdResQueue")
 	resEventChan := g.dbEngine.DeliverResEvent()
 	go func() {
@@ -173,8 +177,10 @@ func (g *GnetServer) listenCmdResAndWrite2Peer() {
 					continue
 				}
 				go func() {
-					gnetConn, bytes := conn.GnetConn(), cmdRes.GetReply().ToBytes()
-					g.asyncWrite(gnetConn, bytes)
+					finalCmdRes := cmdRes
+					redisConn := finalCmdRes.GetConn()
+					reply := finalCmdRes.GetReply()
+					g.asyncWrite(redisConn.GnetConn(), reply.ToBytes())
 				}()
 			}
 		}

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"godis-tiny/datastruct/dict"
 	"godis-tiny/datastruct/ttl"
 	"godis-tiny/interface/database"
@@ -9,47 +10,45 @@ import (
 	"godis-tiny/redis/protocol"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 )
 
 type CmdLine = [][]byte
 
-// cmdLint database 内部流转的结构体，包含了客户端发送的命令名称和数据
-type cmdLint struct {
-	name string
-	args [][]byte
-}
-
-func (lint *cmdLint) GetCmdName() string {
-	return lint.name
-}
-
-func (lint *cmdLint) GetCmdData() [][]byte {
-	return lint.args
-}
-
-func (lint *cmdLint) GetArgNum() int {
-	return len(lint.args)
-}
-
-func (lint *cmdLint) GetCmdLine() database.CmdLine {
-	line := make([][]byte, lint.GetArgNum()+1)
-	line[0] = []byte(lint.name)
-	copy(line[1:], lint.args)
-	return line
-}
-
-// parseToLint 将resp 协议的字节流转为为 database 内部流转的结构体
-func parseToLint(cmdLine database.CmdLine) *cmdLint {
-	return &cmdLint{
-		name: strings.ToLower(string(cmdLine[0])),
-		args: cmdLine[1:],
-	}
+// CtxPool 减少重复的内存分配，降低GC压力
+var CtxPool = &sync.Pool{
+	New: func() interface{} {
+		return &CommandContext{}
+	},
 }
 
 type CommandContext struct {
-	db   *DB
-	conn redis.Conn
+	db      *DB
+	conn    redis.Conn
+	cmdLine database.CmdLine
+}
+
+func (c *CommandContext) Reset() {
+	c.db = nil
+	c.conn = nil
+	c.cmdLine = nil
+}
+
+func (c *CommandContext) GetCmdName() string {
+	return strings.ToLower(string(c.cmdLine[0]))
+}
+
+func (c *CommandContext) GetArgs() [][]byte {
+	return c.cmdLine[1:]
+}
+
+func (c *CommandContext) GetArgNum() int {
+	return len(c.cmdLine[1:])
+}
+
+func (c *CommandContext) GetCmdLine() [][]byte {
+	return c.cmdLine
 }
 
 func (c *CommandContext) GetDb() *DB {
@@ -60,14 +59,7 @@ func (c *CommandContext) GetConn() redis.Conn {
 	return c.conn
 }
 
-func MakeCommandContext(db *DB, conn redis.Conn) *CommandContext {
-	return &CommandContext{
-		db:   db,
-		conn: conn,
-	}
-}
-
-type ExeFunc func(cmdCtx *CommandContext, cmdLint *cmdLint) redis.Reply
+type ExeFunc func(c context.Context, ctx *CommandContext) redis.Reply
 
 func nothingTodo(line database.CmdLine) {
 }
@@ -105,19 +97,18 @@ func MakeSimpleSync(index int, checker database.IndexChecker, ttlChecker databas
 	}
 }
 
-func (db *DB) Exec(c redis.Conn, lint *cmdLint) redis.Reply {
-	cmdName := lint.GetCmdName()
+func (db *DB) Exec(c context.Context, ctx *CommandContext) redis.Reply {
+	cmdName := ctx.GetCmdName()
 	cmd := cmdManager.getCmd(cmdName)
 	if cmd == nil {
-		cmdData := lint.GetCmdData()
-		with := make([]string, 0, len(cmdData))
-		for _, data := range cmdData {
-			with = append(with, "'"+string(data)+"'")
+		args := ctx.GetArgs()
+		with := make([]string, 0, len(args))
+		for _, arg := range args {
+			with = append(with, "'"+string(arg)+"'")
 		}
 		return protocol.MakeUnknownCommand(cmdName, with...)
 	}
-	ctx := MakeCommandContext(db, c)
-	return cmd.exeFunc(ctx, lint)
+	return cmd.exeFunc(c, ctx)
 }
 
 /* ---- Data Access ----- */

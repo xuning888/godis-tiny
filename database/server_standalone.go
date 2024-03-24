@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"errors"
 	"go.uber.org/zap"
 	"godis-tiny/config"
@@ -84,21 +85,30 @@ func (s *Standalone) Exec(req *database.CmdReq) *database.CmdRes {
 func (s *Standalone) doExec(req *database.CmdReq) *database.CmdRes {
 	// 执行命令
 	client := req.GetConn()
-	lint := parseToLint(req.GetCmdLine())
 	index := client.GetIndex()
 	var reply redis.Reply = nil
 	db, reply := s.selectDb(index)
 	if reply != nil {
 		return database.MakeCmdRes(client, reply)
-	} else {
-		// 每次执行指令的时候都尝试和检查和清理过期的key
-		if lint.GetCmdName() != "ttlops" {
-			db.RandomCheckTTLAndClearV1()
-		}
-		// 执行指令
-		reply = db.Exec(client, lint)
+	}
+	cmdCtx := CtxPool.Get().(*CommandContext)
+	cmdCtx.db = db
+	cmdCtx.conn = client
+	cmdCtx.cmdLine = req.GetCmdLine()
+	defer func() {
+		cmdCtx.Reset()
+		CtxPool.Put(cmdCtx)
+	}()
+	// 每次执行指令的时候都尝试和检查和清理过期的key
+	if cmdCtx.GetCmdName() != "ttlops" {
+		db.RandomCheckTTLAndClearV1()
+	}
+	// 执行指令
+	reply = db.Exec(context.Background(), cmdCtx)
+	if reply != nil {
 		return database.MakeCmdRes(client, reply)
 	}
+	return nil
 }
 
 func (s *Standalone) CheckAndClearDb() {
@@ -162,7 +172,7 @@ func (s *Standalone) startCmdConsumer() {
 					return
 				}
 				cmdRes := s.doExec(cmdReq)
-				if cmdRes.GetConn().IsInner() {
+				if cmdRes == nil || cmdRes.GetConn().IsInner() {
 					continue
 				}
 				s.resQueue <- cmdRes

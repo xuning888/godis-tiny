@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/util"
 	"godis-tiny/redis/protocol"
@@ -11,13 +12,13 @@ import (
 )
 
 // execDel del key [key...]
-func execDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execDel(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 {
 		// 错误参数
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	keys := make([]string, len(cmdData))
 	for i := 0; i < len(cmdData); i++ {
 		keys[i] = string(cmdData[i])
@@ -25,19 +26,19 @@ func execDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	db := ctx.GetDb()
 	deleted := db.Removes(keys...)
 	if deleted > 0 {
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(int64(deleted))
 	}
 	return protocol.MakeIntReply(0)
 }
 
 // execKeys keys pattern
-func execKeys(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execKeys(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	args := lint.GetCmdData()
+	args := ctx.GetArgs()
 	pattern := string(args[0])
 	keys := ctx.GetDb().data.Keys()
 	var matchedKeys [][]byte
@@ -57,14 +58,15 @@ func execKeys(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 // execExists
-func execExists(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execExists(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
 	keys := make([]string, argNum)
+	args := ctx.GetArgs()
 	for i := 0; i < argNum; i++ {
-		keys[i] = string(lint.GetCmdData()[i])
+		keys[i] = string(args[i])
 	}
 	if len(keys) == 0 {
 		return protocol.MakeIntReply(0)
@@ -74,12 +76,12 @@ func execExists(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 // execTTL ttl key
-func execTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execTTL(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	db := ctx.GetDb()
 	// key 不存在返回-2
@@ -107,12 +109,12 @@ func execTTL(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 // execExpire expire key ttl
-func execExpire(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execExpire(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	ttl, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
 	if err != nil {
@@ -130,12 +132,12 @@ func execExpire(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 // execPersist persist key 移除key的过期时间
-func execPersist(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execPersist(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	expired, exists := ctx.GetDb().IsExpiredV1(key)
 	// key 不存在ttl
@@ -149,17 +151,17 @@ func execPersist(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	// key 存在，并且没有过期，就移除他的ttl
 	ctx.GetDb().RemoveTTLV1(key)
 	// add aof
-	ctx.GetDb().addAof(lint.GetCmdLine())
+	ctx.GetDb().addAof(ctx.GetCmdLine())
 	return protocol.MakeIntReply(1)
 }
 
 // execExpireAt expireat key unix-time-seconds
-func execExpireAt(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execExpireAt(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	timestamp, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
 	if err != nil {
@@ -172,7 +174,7 @@ func execExpireAt(ctx *CommandContext, lint *cmdLint) redis.Reply {
 	expireTime := time.Unix(timestamp, 0)
 	ctx.GetDb().ExpireV1(key, expireTime)
 	// add aof
-	ctx.GetDb().addAof(lint.GetCmdLine())
+	ctx.GetDb().addAof(ctx.GetCmdLine())
 	return protocol.MakeIntReply(1)
 }
 

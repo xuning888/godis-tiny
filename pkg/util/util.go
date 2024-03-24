@@ -28,6 +28,17 @@ func ToCmdLine(key string, args ...string) database.CmdLine {
 	return cmdLine
 }
 
+func ToCmdLine2(key string, args [][]byte) database.CmdLine {
+	cmdLine := make([][]byte, 0)
+	cmdLine = append(cmdLine, []byte(key))
+	if args != nil && len(args) > 0 {
+		for _, arg := range args {
+			cmdLine = append(cmdLine, arg)
+		}
+	}
+	return cmdLine
+}
+
 var expireat = []byte("expireat")
 
 func MakeExpireCmd(key string, expireAt time.Time) database.CmdLine {

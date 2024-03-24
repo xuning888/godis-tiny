@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/util"
@@ -11,7 +12,7 @@ import (
 	"time"
 )
 
-func (db *DB) getAsString(key string) ([]byte, protocol.ErrReply) {
+func (db *DB) getAsString(key string) ([]byte, redis.Reply) {
 	entity, ok := db.GetEntity(key)
 	if !ok {
 		return nil, nil
@@ -24,12 +25,12 @@ func (db *DB) getAsString(key string) ([]byte, protocol.ErrReply) {
 	return bytes, nil
 }
 
-func execGet(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execGet(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	args := lint.GetCmdData()
+	args := ctx.GetArgs()
 	key := string(args[0])
 	db := ctx.GetDb()
 	bytes, err := db.getAsString(key)
@@ -52,12 +53,12 @@ const (
 const unlimitedTTL int64 = 0
 
 // execSet set key value [NX|XX] [EX seconds | PS milliseconds]
-func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execSet(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 || argNum > 4 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	args := lint.GetCmdData()
+	args := ctx.GetArgs()
 	key := string(args[0])
 	value := args[1]
 	// 默认是 update 和 add, 如果 key 已经存在，就覆盖它，如果不在就创建它
@@ -137,13 +138,13 @@ func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		if ttl != unlimitedTTL {
 			expireTime := time.Now().Add(time.Duration(ttl) * time.Millisecond)
 			db.ExpireV1(key, expireTime)
-			db.addAof(lint.GetCmdLine())
+			db.addAof(ctx.GetCmdLine())
 			// convert to expireat
 			expireAtCmd := util.MakeExpireCmd(key, expireTime)
 			db.addAof(expireAtCmd)
 		} else {
 			db.RemoveTTLV1(key)
-			db.addAof(lint.GetCmdLine())
+			db.addAof(ctx.GetCmdLine())
 		}
 		return protocol.MakeOkReply()
 	}
@@ -151,12 +152,12 @@ func execSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 // execSetNx setnx key value
-func execSetNx(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execSetNx(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	value := cmdData[1]
 	db := ctx.GetDb()
@@ -164,17 +165,17 @@ func execSetNx(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		Type: database.String,
 		Data: value,
 	})
-	ctx.GetDb().addAof(lint.GetCmdLine())
+	ctx.GetDb().addAof(ctx.GetCmdLine())
 	return protocol.MakeIntReply(int64(res))
 }
 
 // execStrLen strlen key
-func execStrLen(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execStrLen(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	db := ctx.GetDb()
 	value, reply := db.getAsString(key)
@@ -190,12 +191,12 @@ func execStrLen(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 // execGetSet getset key value
-func execGetSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execGetSet(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	value := cmdData[1]
 	db := ctx.GetDb()
@@ -205,7 +206,7 @@ func execGetSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return reply
 	}
 	db.PutEntity(key, &database.DataEntity{Data: value, Type: database.String})
-	ctx.GetDb().addAof(lint.GetCmdLine())
+	ctx.GetDb().addAof(ctx.GetCmdLine())
 	if oldValue != nil {
 		return protocol.MakeBulkReply(oldValue)
 	}
@@ -214,12 +215,12 @@ func execGetSet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 
 // execIncr incr key
 // incr 命令存在对内存的读写操作，此处没有使用锁来保证线程安全, 而是在dbEngin中使用队列来保证命令排队执行
-func execIncr(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execIncr(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	db := ctx.GetDb()
 	valueBytes, reply := db.getAsString(key)
@@ -229,7 +230,7 @@ func execIncr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 			Type: database.String,
 			Data: []byte("1"),
 		})
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(1)
 	} else if reply != nil {
 		return reply
@@ -247,25 +248,25 @@ func execIncr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 			Type: database.String,
 			Data: []byte(valueStr),
 		})
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(value)
 	}
 }
 
 // execDecr decr key
-func execDecr(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execDecr(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	valueBytes, reply := ctx.GetDb().getAsString(key)
 	if reply != nil {
 		return reply
 	} else if valueBytes == nil {
 		ctx.GetDb().PutEntity(key, &database.DataEntity{Data: []byte("-1"), Type: database.String})
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(-1)
 	} else {
 		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
@@ -278,18 +279,18 @@ func execDecr(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		value--
 		valueStr := strconv.FormatInt(value, 10)
 		ctx.GetDb().PutEntity(key, &database.DataEntity{Data: []byte(valueStr), Type: database.String})
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(value)
 	}
 }
 
 // execGetRange getrange key start end
-func execGetRange(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execGetRange(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 3 || argNum > 3 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	start, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
 	if err != nil {
@@ -328,12 +329,12 @@ func execGetRange(ctx *CommandContext, lint *cmdLint) redis.Reply {
 }
 
 // execMGet mget key[key...]
-func execMGet(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execMGet(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	length := len(cmdData)
 	result := make([]redis.Reply, 0, length)
 	db := ctx.GetDb()
@@ -351,12 +352,12 @@ func execMGet(ctx *CommandContext, lint *cmdLint) redis.Reply {
 
 // execGetDel getdel
 // todo if the key dose not exist of if the key's value type is not a string
-func execGetDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execGetDel(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	valueBytes, reply := ctx.GetDb().getAsString(key)
 	if reply != nil {
@@ -365,18 +366,18 @@ func execGetDel(ctx *CommandContext, lint *cmdLint) redis.Reply {
 		return protocol.MakeNullBulkReply()
 	} else {
 		ctx.GetDb().Remove(key)
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeBulkReply(valueBytes)
 	}
 }
 
 // execIncrBy incrby key increment
-func execIncrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execIncrBy(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	increment, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
 	if err != nil {
@@ -390,7 +391,7 @@ func execIncrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
 			Type: database.String,
 			Data: []byte(strconv.FormatInt(increment, 10)),
 		})
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(increment)
 	} else {
 		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
@@ -405,17 +406,17 @@ func execIncrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
 			Type: database.String,
 			Data: []byte(strconv.FormatInt(value, 10)),
 		})
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(value)
 	}
 }
 
-func execDecrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
-	argNum := lint.GetArgNum()
+func execDecrBy(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
 	if argNum < 2 || argNum > 2 {
-		return protocol.MakeNumberOfArgsErrReply(lint.GetCmdName())
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
-	cmdData := lint.GetCmdData()
+	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	decrement, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
 	if err != nil {
@@ -429,7 +430,7 @@ func execDecrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
 			Type: database.String,
 			Data: []byte(strconv.FormatInt(decrement, 10)),
 		})
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(decrement)
 	} else {
 		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
@@ -444,7 +445,7 @@ func execDecrBy(ctx *CommandContext, lint *cmdLint) redis.Reply {
 			Type: database.String,
 			Data: []byte(strconv.FormatInt(value, 10)),
 		})
-		ctx.GetDb().addAof(lint.GetCmdLine())
+		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(value)
 	}
 }

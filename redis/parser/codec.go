@@ -101,9 +101,7 @@ func handleDecodeError(err error, c *Codec) error {
 	if errors.Is(err, ErrIncompletePacket) {
 		return err
 	}
-	c.resetDecoder()
-	c.buf = make(buffer, 0, 1<<16)
-	c.argsBuf = make([][]byte, 0)
+	c.Reset()
 	return err
 }
 
@@ -246,7 +244,13 @@ func (c *Codec) resetDecoder() {
 	c.remainingBulkLength = 0
 }
 
-func NewCodecc() *Codec {
+func (c *Codec) Reset() {
+	c.resetDecoder()
+	c.buf = make(buffer, 0, 1<<16)
+	c.argsBuf = make([][]byte, 0)
+}
+
+func NewCodec() *Codec {
 	return &Codec{
 		buf:     make(buffer, 0, 1<<16),
 		argsBuf: make([][]byte, 0),

@@ -16,7 +16,8 @@ type Conn interface {
 	IsInner() bool
 	// RemoteAddr 获取远程地址
 	RemoteAddr() net.Addr
-	// GnetConn gnet的conn
+	// Write
+	Write(p []byte) (int, error)
 	GnetConn() gnet.Conn
 }
 
@@ -25,4 +26,18 @@ type ConnCounter interface {
 
 	// CountConnections connected_clients
 	CountConnections() int
+}
+
+type ConnManager interface {
+
+	// RegisterConn registerConn
+	RegisterConn(key string, conn Conn)
+
+	// RemoveConnByKey removeConn by key
+	RemoveConnByKey(key string)
+
+	// RemoveConn remove conn
+	RemoveConn(conn Conn)
+
+	Get(key string) Conn
 }

@@ -113,7 +113,7 @@ func TestDecode(t *testing.T) {
 		},
 	}
 
-	codec := NewCodecc()
+	codec := NewCodec()
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			for _, bytes := range tc.InputBytes {
