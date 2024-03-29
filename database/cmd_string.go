@@ -12,17 +12,22 @@ import (
 	"time"
 )
 
-func (db *DB) getAsString(key string) ([]byte, redis.Reply) {
+func (db *DB) getAsString(key string) (bytes []byte, errReply redis.Reply) {
 	entity, ok := db.GetEntity(key)
 	if !ok {
-		return nil, nil
+		return
 	}
-	// 类型转换
-	bytes, ok := entity.Data.([]byte)
-	if !ok {
-		return nil, protocol.MakeWrongTypeErrReply()
+	// 类型校验
+	if entity.Type == database.String {
+		// 类型转换
+		bytes, ok = entity.Data.([]byte)
+		if !ok {
+			errReply = protocol.MakeWrongTypeErrReply()
+		}
+		return
 	}
-	return bytes, nil
+	errReply = protocol.MakeWrongTypeErrReply()
+	return
 }
 
 func execGet(c context.Context, ctx *CommandContext) redis.Reply {
@@ -202,7 +207,6 @@ func execGetSet(c context.Context, ctx *CommandContext) redis.Reply {
 	db := ctx.GetDb()
 	oldValue, reply := db.getAsString(key)
 	if reply != nil {
-		// TODO error log
 		return reply
 	}
 	db.PutEntity(key, &database.DataEntity{Data: value, Type: database.String})
@@ -350,6 +354,25 @@ func execMGet(c context.Context, ctx *CommandContext) redis.Reply {
 	return protocol.MakeMultiRowReply(result)
 }
 
+// execMSet
+func execMSet(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
+	if argNum == 0 || argNum%2 != 0 {
+		return protocol.MakeUnknownCommand(ctx.GetCmdName())
+	}
+	args := ctx.GetArgs()
+	for i := 1; i < argNum; i += 2 {
+		key := string(args[i-1])
+		value := args[i]
+		ctx.GetDb().PutEntity(key, &database.DataEntity{
+			Type: database.String,
+			Data: value,
+		})
+	}
+	ctx.GetDb().addAof(ctx.GetCmdLine())
+	return protocol.MakeOkReply()
+}
+
 // execGetDel getdel
 // todo if the key dose not exist of if the key's value type is not a string
 func execGetDel(c context.Context, ctx *CommandContext) redis.Reply {
@@ -398,7 +421,8 @@ func execIncrBy(c context.Context, ctx *CommandContext) redis.Reply {
 		if err != nil {
 			return protocol.MakeOutOfRangeOrNotInt()
 		}
-		if math.MaxInt64-increment < value {
+		if (increment > 0 && math.MaxInt64-increment < value) ||
+			(increment < 0 && math.MinInt64-increment > value) {
 			return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
 		}
 		value += increment
@@ -422,22 +446,27 @@ func execDecrBy(c context.Context, ctx *CommandContext) redis.Reply {
 	if err != nil {
 		return protocol.MakeOutOfRangeOrNotInt()
 	}
+	if decrement == math.MinInt64 {
+		return protocol.MakeStandardErrReply("ERR decrement would overflow")
+	}
 	valueBytes, reply := ctx.GetDb().getAsString(key)
 	if reply != nil {
 		return reply
 	} else if valueBytes == nil {
+		value := 0 - decrement
 		ctx.GetDb().PutEntity(key, &database.DataEntity{
 			Type: database.String,
-			Data: []byte(strconv.FormatInt(decrement, 10)),
+			Data: []byte(strconv.FormatInt(value, 10)),
 		})
 		ctx.GetDb().addAof(ctx.GetCmdLine())
-		return protocol.MakeIntReply(decrement)
+		return protocol.MakeIntReply(value)
 	} else {
 		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
 		if err != nil {
 			return protocol.MakeOutOfRangeOrNotInt()
 		}
-		if math.MinInt64+decrement > value {
+		if (decrement > 0 && math.MinInt64+decrement > value) ||
+			(decrement < 0 && (math.MaxInt64+decrement < value)) {
 			return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
 		}
 		value -= decrement
@@ -463,4 +492,5 @@ func registerStringCmd() {
 	cmdManager.registerCmd("getdel", execGetDel, readWrite)
 	cmdManager.registerCmd("incrby", execIncrBy, readWrite)
 	cmdManager.registerCmd("decrby", execDecrBy, readWrite)
+	cmdManager.registerCmd("mset", execMSet, writeOnly)
 }
