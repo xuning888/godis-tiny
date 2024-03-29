@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"godis-tiny/interface/redis"
+	"strconv"
 	"strings"
 )
 
@@ -57,7 +58,15 @@ func (b *BulkReply) ToBytes() []byte {
 	if b.Arg == nil {
 		return NullBulkReplyBytes
 	}
-	return []byte(fmt.Sprintf("$%d%s%s%s", len(b.Arg), CRLF, string(b.Arg), CRLF))
+	argLenStr := strconv.Itoa(len(b.Arg))
+	bufLen := 1 + len(argLenStr) + 2 + len(b.Arg) + 2
+	buffer := make([]byte, 0, bufLen)
+	buffer = append(buffer, '$')
+	buffer = append(buffer, []byte(argLenStr)...)
+	buffer = append(buffer, CRLFBytes...)
+	buffer = append(buffer, b.Arg...)
+	buffer = append(buffer, CRLFBytes...)
+	return buffer
 }
 
 func MakeBulkReply(arg []byte) *BulkReply {
@@ -82,12 +91,31 @@ func (m *MultiBulkReply) ToBytes() []byte {
 		return NullBulkReplyBytes
 	}
 	argLen := len(m.Args)
-	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("*%d%s", argLen, CRLF))
-	for _, row := range m.Args {
-		buf.Write(MakeBulkReply(row).ToBytes())
+	bufLen := 1 + len(strconv.Itoa(argLen)) + 2
+	for _, arg := range m.Args {
+		if arg == nil {
+			bufLen += 3 + 2
+		} else {
+			bufLen += 1 + len(strconv.Itoa(len(arg))) + 2 + len(arg) + 2
+		}
 	}
-	return buf.Bytes()
+	buffer := make([]byte, 0, bufLen)
+	buffer = append(buffer, '*')
+	buffer = append(buffer, []byte(strconv.Itoa(argLen))...)
+	buffer = append(buffer, CRLFBytes...)
+	for _, arg := range m.Args {
+		if arg == nil {
+			buffer = append(buffer, []byte{'$', '-', '1'}...)
+			buffer = append(buffer, CRLFBytes...)
+		} else {
+			buffer = append(buffer, '$')
+			buffer = append(buffer, []byte(strconv.Itoa(len(arg)))...)
+			buffer = append(buffer, CRLFBytes...)
+			buffer = append(buffer, arg...)
+			buffer = append(buffer, CRLFBytes...)
+		}
+	}
+	return buffer
 }
 
 type MultiRowReply struct {
