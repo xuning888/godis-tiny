@@ -26,25 +26,40 @@ var CtxPool = &sync.Pool{
 type CommandContext struct {
 	db      *DB
 	conn    redis.Conn
+	cmdName string
 	cmdLine database.CmdLine
+	args    [][]byte
 }
 
 func (c *CommandContext) Reset() {
 	c.db = nil
 	c.conn = nil
+	c.cmdName = ""
 	c.cmdLine = nil
+	c.args = nil
 }
 
 func (c *CommandContext) GetCmdName() string {
-	return strings.ToLower(string(c.cmdLine[0]))
+	if c.cmdName == "" {
+		if len(c.cmdLine) > 0 {
+			c.cmdName = strings.ToLower(string(c.cmdLine[0]))
+		}
+	}
+	return c.cmdName
 }
 
 func (c *CommandContext) GetArgs() [][]byte {
-	return c.cmdLine[1:]
+	if c.args == nil {
+		c.args = c.cmdLine[1:]
+	}
+	return c.args
 }
 
 func (c *CommandContext) GetArgNum() int {
-	return len(c.cmdLine[1:])
+	if c.args == nil {
+		c.args = c.cmdLine[1:]
+	}
+	return len(c.args)
 }
 
 func (c *CommandContext) GetCmdLine() [][]byte {

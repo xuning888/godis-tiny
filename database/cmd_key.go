@@ -108,6 +108,37 @@ func execTTL(c context.Context, ctx *CommandContext) redis.Reply {
 	return protocol.MakeIntReply(int64(math.Round(seconds)))
 }
 
+func execPTTL(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
+	if argNum < 1 || argNum > 1 {
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
+	}
+	cmdData := ctx.GetArgs()
+	key := string(cmdData[0])
+	db := ctx.GetDb()
+	// key 不存在返回-2
+	_, ok := db.GetEntity(key)
+	if !ok {
+		return protocol.MakeIntReply(-2)
+	}
+	// 没有设置过期时间返回-1
+	expired, exists := db.IsExpiredV1(key)
+	if !exists {
+		return protocol.MakeIntReply(-1)
+	}
+
+	// 如果过期了，删除key,并且返回-2
+	if expired {
+		db.Remove(key)
+		return protocol.MakeIntReply(-2)
+	}
+
+	expireTime := db.ExpiredAt(key)
+	remainingTime := expireTime.Sub(time.Now())
+	microseconds := remainingTime.Milliseconds()
+	return protocol.MakeIntReply(int64(math.Round(float64(microseconds))))
+}
+
 // execExpire expire key ttl
 func execExpire(c context.Context, ctx *CommandContext) redis.Reply {
 	argNum := ctx.GetArgNum()
@@ -186,4 +217,5 @@ func registerKeyCmd() {
 	cmdManager.registerCmd("expire", execExpire, readWrite)
 	cmdManager.registerCmd("persist", execPersist, readWrite)
 	cmdManager.registerCmd("expireat", execExpireAt, readWrite)
+	cmdManager.registerCmd("pttl", execPTTL, readOnly)
 }
