@@ -35,13 +35,14 @@ func flushDb(c context.Context, ctx *CommandContext) redis.Reply {
 		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
 	db := ctx.GetDb()
+	cmdLine := ctx.GetCmdLine()
 	if policy == flushSync {
 		db.Flush()
-		ctx.GetDb().addAof(ctx.GetArgs())
+		db.addAof(cmdLine)
 	} else {
 		go func() {
 			db.Flush()
-			ctx.GetDb().addAof(ctx.GetArgs())
+			db.addAof(cmdLine)
 		}()
 	}
 	return protocol.MakeOkReply()
