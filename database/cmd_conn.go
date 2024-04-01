@@ -32,7 +32,7 @@ func selectDb(c context.Context, ctx *CommandContext) redis.Reply {
 	if err != nil {
 		return protocol.MakeOutOfRangeOrNotInt()
 	}
-	err = db.indexChecker.CheckIndex(index)
+	err = db.engineCommand.CheckIndex(index)
 	if err != nil {
 		return protocol.MakeStandardErrReply(err.Error())
 	}

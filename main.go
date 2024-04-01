@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"godis-tiny/config"
 	"godis-tiny/pkg/logger"
 	"godis-tiny/pkg/util"
@@ -32,13 +31,6 @@ func main() {
 	} else {
 		config.Properties = defaultConfig
 	}
-	gnetServer, err := tcp.NewGnetServer()
-	if err != nil {
-		logger.Errorf("start server failed with error: %v", err)
-		return
-	}
-	address := fmt.Sprintf("tcp://%s:%d", config.Properties.Bind, config.Properties.Port)
-	if err = gnetServer.Serve(address); err != nil {
-		fmt.Printf("start server failed with error: %v\n", err)
-	}
+	server := tcp.NewRedisServer()
+	server.Spin()
 }

@@ -15,15 +15,17 @@ import (
 var defaultMaxClients = 10000
 
 type ServerProperties struct {
-	RunID          string `cfg:"runid"`
-	Bind           string `cfg:"bind"`
-	Port           int    `cfg:"port"`
-	Dir            string `cfg:"dir"`
-	AppendOnly     bool   `cfg:"appendonly"`
-	AppendFilename string `cfg:"appendfilename"`
-	AppendFsync    string `cfg:"appendfsync"`
-	MaxClients     int    `cfg:"maxclients"`
-
+	RunID                string `cfg:"runid"`
+	Bind                 string `cfg:"bind"`
+	Port                 int    `cfg:"port"`
+	Dir                  string `cfg:"dir"`
+	AppendOnly           bool   `cfg:"appendonly"`
+	AppendFilename       string `cfg:"appendfilename"`
+	AppendFsync          string `cfg:"appendfsync"`
+	MaxClients           int    `cfg:"maxclients"`
+	Databases            int    `cfg:"databases"`
+	AofRewriteMinSize    int    `cfg:"auto-aof-rewrite-min-size"`
+	AofRewritePercentage int    `cfg:"auto-aof-rewrite-percentage"`
 	// config file path
 	CfPath string `cfg:"cf,omitempty"`
 }
@@ -114,4 +116,12 @@ func SetUpConfig(filename string) {
 	if Properties.Dir == "" {
 		Properties.Dir = "."
 	}
+
+	// convert to byte
+	rewriteMinSize := Properties.AofRewriteMinSize * 1024 * 1024
+	Properties.AofRewriteMinSize = rewriteMinSize
+}
+
+func TmpDir() string {
+	return Properties.Dir + "/tmp"
 }

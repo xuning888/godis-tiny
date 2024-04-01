@@ -9,29 +9,85 @@ import (
 	"godis-tiny/interface/redis"
 	"godis-tiny/persistence"
 	"godis-tiny/pkg/logger"
+	"godis-tiny/pkg/util"
+	"godis-tiny/redis/connection"
 	"godis-tiny/redis/protocol"
 	"runtime"
 	"sync/atomic"
+	"time"
 )
 
 var _ database.DBEngine = &Standalone{}
 
 // Standalone 单机存储的存储引擎
 type Standalone struct {
+	ctx      context.Context
+	cancel   func()
 	dbSet    []*atomic.Value
-	aof      persistence.Aof
+	aof      *persistence.Aof
 	reqQueue chan *database.CmdReq
 	resQueue chan *database.CmdRes
 	lg       *zap.Logger
 }
 
-var multi = runtime.NumCPU() << 9
+func (s *Standalone) Cron() {
+	cmdReq := database.MakeCmdReq(connection.SystemCon, util.ToCmdLine("ttlops"))
+	s.PushReqEvent(cmdReq)
+
+	// 触发aof重写
+	s.aofRewrite()
+}
+
+func (s *Standalone) aofRewrite() {
+	if !config.Properties.AppendOnly {
+		return
+	}
+	defer s.lg.Sync()
+	// 当前aof文件的大小
+	currentAofFileSize, err := s.aof.CurrentAofSize()
+	if err != nil {
+		s.lg.Sugar().Errorf("check aof filesize failed with error: %v", err)
+		return
+	}
+	// 上一次aof重写后的大小
+	lastAofRewriteSize := s.aof.LasAofRewriteSize()
+	// 计算aof文件的增长量
+	aofSizeIncrease := currentAofFileSize - lastAofRewriteSize
+
+	if aofSizeIncrease <= 0 {
+		return
+	}
+	// 计算当前增长的百分比是否超过设置的阈值
+	rewriteNeeded := (aofSizeIncrease >= int64(float64(lastAofRewriteSize)*float64(config.Properties.AofRewritePercentage)/100.0)) &&
+		(currentAofFileSize >= int64(config.Properties.AofRewriteMinSize))
+
+	if rewriteNeeded {
+		go func() {
+			err2 := s.aof.Rewrite()
+			if err2 != nil && !errors.Is(err2, persistence.ErrAofRewriteIsRunning) {
+				s.lg.Sugar().Errorf("aof rewrite failed with error: %v", err2)
+			} else {
+				s.lg.Sugar().Info("aof rewrite successfully")
+			}
+		}()
+	}
+}
+
+func (s *Standalone) ForEach(dbIndex int, cb func(key string, entity *database.DataEntity, expiration *time.Time) bool) {
+	db, _ := s.selectDb(dbIndex)
+	db.ForEach(cb)
+}
+
+var multi = runtime.NumCPU()
 
 func MakeStandalone() *Standalone {
+	ctx, cancelFunc := context.WithCancel(context.Background())
 	server := &Standalone{
 		resQueue: make(chan *database.CmdRes, multi),
-		reqQueue: make(chan *database.CmdReq, 1),
+		reqQueue: make(chan *database.CmdReq, multi),
 	}
+	server.ctx = ctx
+	server.cancel = cancelFunc
 	lg, err := logger.CreateLogger(logger.DefaultLevel)
 	if err != nil {
 		panic(err)
@@ -41,8 +97,8 @@ func MakeStandalone() *Standalone {
 		server.lg.Sugar().Errorf("new ants pool failed with error: %v", err)
 		panic(err)
 	}
-	dbSet := make([]*atomic.Value, 16)
-	for i := 0; i < 16; i++ {
+	dbSet := make([]*atomic.Value, config.Properties.Databases)
+	for i := 0; i < config.Properties.Databases; i++ {
 		sdb := MakeSimpleDb(i, server, server)
 		holder := &atomic.Value{}
 		holder.Store(sdb)
@@ -51,12 +107,26 @@ func MakeStandalone() *Standalone {
 	server.dbSet = dbSet
 
 	if config.Properties.AppendOnly {
-		aofServer, err := persistence.NewAof(server, config.Properties.AppendFilename, config.Properties.AppendFsync)
+		aofServer, err := persistence.NewAof(
+			server, config.Properties.AppendFilename, config.Properties.AppendFsync, MakeTemp)
 		if err != nil {
 			panic(err)
 		}
 		server.bindPersister(aofServer)
 	}
+	return server
+}
+
+func MakeTemp() database.DBEngine {
+	server := &Standalone{}
+	dbSet := make([]*atomic.Value, 16)
+	for i := 0; i < 16; i++ {
+		sdb := MakeSimpleDb(i, server, server)
+		holder := &atomic.Value{}
+		holder.Store(sdb)
+		dbSet[i] = holder
+	}
+	server.dbSet = dbSet
 	return server
 }
 
@@ -67,9 +137,19 @@ func (s *Standalone) CheckIndex(index int) error {
 	return nil
 }
 
+func (s *Standalone) Rewrite() error {
+	return s.aof.Rewrite()
+}
+
 func (s *Standalone) PushReqEvent(req *database.CmdReq) {
 	go func() {
-		s.reqQueue <- req
+		select {
+		case <-s.ctx.Done():
+			s.lg.Sugar().Errorf("push aborted: Standalone is shutting down")
+			return
+		case s.reqQueue <- req:
+			return
+		}
 	}()
 }
 
@@ -136,6 +216,8 @@ func (s *Standalone) Close() error {
 	close(s.reqQueue)
 	// 关闭返回结果的队列
 	close(s.resQueue)
+	// 关闭aof
+	s.aof.Close()
 	return nil
 }
 
@@ -149,7 +231,7 @@ func (s *Standalone) Init() {
 	s.startCmdConsumer()
 }
 
-func (s *Standalone) bindPersister(aof persistence.Aof) {
+func (s *Standalone) bindPersister(aof *persistence.Aof) {
 	s.aof = aof
 	for _, db := range s.dbSet {
 		mDb := db.Load().(*DB)
@@ -161,11 +243,22 @@ func (s *Standalone) bindPersister(aof persistence.Aof) {
 	}
 }
 
+func (s *Standalone) Shutdown(cancelCtx context.Context) error {
+	s.lg.Sugar().Info("shutdown dbEngine...")
+	s.cancel()
+	close(s.reqQueue)
+	close(s.resQueue)
+	return s.aof.Shutdown(cancelCtx)
+}
+
 // startCmdConsumer 开启一个协程消费指令
 func (s *Standalone) startCmdConsumer() {
 	go func() {
 		for {
 			select {
+			case <-s.ctx.Done():
+				s.lg.Info("cmdReqQueue is closed")
+				return
 			case cmdReq, ok := <-s.reqQueue:
 				if !ok {
 					s.lg.Info("cmdReqQueue is closed")

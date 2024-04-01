@@ -6,6 +6,7 @@ import (
 	"godis-tiny/interface/database"
 	"godis-tiny/pkg/logger"
 	"godis-tiny/pkg/util"
+	"godis-tiny/pkg/wait"
 	"godis-tiny/redis/connection"
 	"godis-tiny/redis/parser"
 	"godis-tiny/redis/protocol"
@@ -18,7 +19,13 @@ import (
 )
 
 const (
-	aofQueueSize = 1 << 16
+	aofQueueSize = 1
+)
+
+const (
+	_ = iota
+	none
+	rewrite
 )
 
 const (
@@ -40,19 +47,11 @@ type Listener interface {
 	CallBack([]CmdLine)
 }
 
-var _ Aof = &aof{}
-
-// Aof aof的功能定义
-type Aof interface {
-	// AppendAof 添加到Aof中
-	AppendAof(dbIndex int, cmdLine CmdLine)
-
-	LoadAof(maxBytes int)
-}
-
 // Aof persistence
-type aof struct {
-	db database.DBEngine
+type Aof struct {
+	status      uint32
+	db          database.DBEngine
+	tempDbMaker func() database.DBEngine
 	// aofFilename aof文件名称
 	aofFilename string
 	// aofFsync
@@ -70,12 +69,28 @@ type aof struct {
 	// ctx
 	ctx context.Context
 	// cancel
-	cancel context.CancelFunc
-	lg     *zap.Logger
-	mux    sync.Mutex
+	cancel             context.CancelFunc
+	lg                 *zap.Logger
+	mux                sync.Mutex
+	wait               wait.Wait
+	lastRewriteAofSize int64
 }
 
-func (a *aof) AppendAof(dbIndex int, cmdLine CmdLine) {
+// CurrentAofSize aof file size
+func (a *Aof) CurrentAofSize() (int64, error) {
+	stat, err := os.Stat(a.aofFilename)
+	if err != nil {
+		return 0, err
+	}
+	return stat.Size(), nil
+}
+
+// LasAofRewriteSize last aof file size
+func (a *Aof) LasAofRewriteSize() int64 {
+	return a.lastRewriteAofSize
+}
+
+func (a *Aof) AppendAof(dbIndex int, cmdLine CmdLine) {
 	if a.aofChan == nil {
 		return
 	}
@@ -90,12 +105,23 @@ func (a *aof) AppendAof(dbIndex int, cmdLine CmdLine) {
 		a.writeAof(p)
 		return
 	}
-
-	// 写入缓冲区
-	a.aofChan <- p
+	a.addToAofBuffer(p)
 }
 
-func (a *aof) writeAof(p *payload) {
+// addToAofBuffer add command to aof channel
+func (a *Aof) addToAofBuffer(p *payload) {
+	go func() {
+		defer a.wait.Done()
+		a.wait.Add(1)
+		select {
+		case <-a.ctx.Done():
+			return
+		case a.aofChan <- p:
+		}
+	}()
+}
+
+func (a *Aof) writeAof(p *payload) {
 	if p.cmdLine == nil || len(p.cmdLine) == 0 {
 		return
 	}
@@ -128,7 +154,7 @@ func (a *aof) writeAof(p *payload) {
 	}
 }
 
-func (a *aof) LoadAof(maxBytes int) {
+func (a *Aof) LoadAof(maxBytes int) {
 	// 在加载aof文件时，先把chan拿走，加载完事后再放回去
 	aofChan := a.aofChan
 	a.aofChan = nil
@@ -184,10 +210,12 @@ func (a *aof) LoadAof(maxBytes int) {
 			a.currentDb = dbIndex
 		}
 	}
+	stat, _ := os.Stat(a.aofFilename)
+	a.lastRewriteAofSize = stat.Size()
 	a.lg.Sugar().Infof("load aof complete, cnt: %v", cnt)
 }
 
-func (a *aof) listenCmd() {
+func (a *Aof) listenCmd() {
 	ch := a.aofChan
 	for p := range ch {
 		a.writeAof(p)
@@ -195,7 +223,7 @@ func (a *aof) listenCmd() {
 	a.aofFinished <- struct{}{}
 }
 
-func (a *aof) fsyncEverySecond() {
+func (a *Aof) fsyncEverySecond() {
 	ticker := time.NewTicker(time.Second)
 	fsyncEverySec := func() {
 		a.mux.Lock()
@@ -216,8 +244,13 @@ func (a *aof) fsyncEverySecond() {
 	}()
 }
 
-func (a *aof) Close() {
+func (a *Aof) Close() {
+	a.wait.Wait()
 	if a.aofFile != nil {
+		for chanLen := len(a.aofChan); chanLen > 0; {
+			a.lg.Sugar().Warnf("aof chan size: %v", chanLen)
+			time.Sleep(time.Millisecond * 100)
+		}
 		close(a.aofChan)
 		<-a.aofFinished
 		err := a.aofFile.Close()
@@ -228,14 +261,40 @@ func (a *aof) Close() {
 	a.cancel()
 }
 
-func NewAof(db database.DBEngine, filename string, fsync string) (Aof, error) {
-	persister := &aof{}
+func (a *Aof) Shutdown(ctx context.Context) error {
+	a.lg.Sugar().Info("shutdown aof...")
+	a.wait.Wait()
+	a.cancel()
+	close(a.aofChan)
+	for lenAofChan := len(a.aofChan); lenAofChan > 0; {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Millisecond * 10):
+			a.lg.Sugar().Warnf("aof chan len: %v", lenAofChan)
+		}
+	}
+	<-a.aofFinished
+	var err error
+	if err = a.aofFile.Sync(); err != nil {
+		a.lg.Sugar().Errorf("shutdown Aof sync aofFile failed with error: %v", err)
+	}
+	if err = a.aofFile.Close(); err != nil {
+		a.lg.Sugar().Errorf("close aof file failed with error: %v", err)
+	}
+	return err
+}
+
+func NewAof(db database.DBEngine, filename string, fsync string, tempDbMaker func() database.DBEngine) (*Aof, error) {
+	persister := &Aof{}
+	persister.status = none
 	persister.db = db
 	// aof 的文件名称
 	persister.aofFilename = filename
 	// aof 的模式
 	persister.aofFsync = strings.ToLower(fsync)
 
+	persister.tempDbMaker = tempDbMaker
 	// 创建aof文件
 	aofFile, err := os.OpenFile(persister.aofFilename, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {

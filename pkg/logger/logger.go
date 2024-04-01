@@ -22,10 +22,9 @@ func SetUpLogger(level zapcore.Level) (*zap.Logger, error) {
 }
 
 func SetUpLoggerv2(level zapcore.Level) (*zap.Logger, error) {
-	lg, err := zap.NewProduction()
-	if err != nil {
-		return nil, err
-	}
+	lgcfg := DefaultZapLoggerConfig
+	lgcfg.Level = zap.NewAtomicLevelAt(level)
+	lg, err := lgcfg.Build()
 	logger = lg
 	return lg, err
 }

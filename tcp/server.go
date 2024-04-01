@@ -10,7 +10,6 @@ import (
 	database2 "godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/pkg/logger"
-	"godis-tiny/pkg/util"
 	"godis-tiny/redis/connection"
 	"godis-tiny/redis/parser"
 	"godis-tiny/redis/protocol"
@@ -155,7 +154,7 @@ func (g *GnetServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 }
 
 func (g *GnetServer) OnTick() (delay time.Duration, action gnet.Action) {
-	g.ttlHandle()
+	g.dbEngine.Cron()
 	return time.Second * time.Duration(1), gnet.None
 }
 
@@ -224,13 +223,6 @@ func (g *GnetServer) asyncWrite(c gnet.Conn, bytes []byte) {
 	if err != nil {
 		g.logger.Sugar().Errorf("Failed to async write to client after %d attempts", maxRetry)
 	}
-}
-
-// ttlHandle 检查和清理所有数据库的过期key
-// ttlops 指令是一个内部指令, 只能被内部client触发, 这个指令会检查并清理所有DB中的过期key
-func (g *GnetServer) ttlHandle() {
-	cmdReq := database2.MakeCmdReq(connection.SystemCon, util.ToCmdLine("ttlops"))
-	g.dbEngine.PushReqEvent(cmdReq)
 }
 
 // listenStopSign 监听操作系统信号,关闭服务

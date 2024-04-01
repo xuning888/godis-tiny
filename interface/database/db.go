@@ -1,9 +1,11 @@
 package database
 
 import (
+	"context"
 	"godis-tiny/datastruct/list"
 	"godis-tiny/interface/redis"
 	"strings"
+	"time"
 )
 
 type RType string
@@ -31,11 +33,19 @@ type DBEngine interface {
 	DeliverResEvent() <-chan *CmdRes
 	// Exec 同步调用
 	Exec(req *CmdReq) *CmdRes
+	// ForEach 遍历指定的db
+	ForEach(dbIndex int, cb func(key string, entity *DataEntity, expiration *time.Time) bool)
+	// Cron 定时任务
+	Cron()
+	// Shutdown 关闭服务器
+	Shutdown(ctx context.Context) error
 }
 
-type IndexChecker interface {
+type EngineCommand interface {
 	// CheckIndex checkIndex
 	CheckIndex(index int) error
+
+	Rewrite() error
 }
 
 type TTLChecker interface {

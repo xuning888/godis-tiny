@@ -106,6 +106,25 @@ func clearTTL(c context.Context, ctx *CommandContext) redis.Reply {
 	return protocol.MakeOkReply()
 }
 
+func execRewriteAof(c context.Context, ctx *CommandContext) redis.Reply {
+	argNum := ctx.GetArgNum()
+	if argNum != 0 {
+		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
+	}
+	db := ctx.GetDb()
+	var reply redis.Reply
+	if config.Properties.AppendOnly {
+		go func() {
+			err := db.engineCommand.Rewrite()
+			if err != nil {
+				log.Printf("start rewrite failed with err: %v", err)
+			}
+		}()
+	}
+	reply = protocol.MakeSimpleReply([]byte("Background append only file rewriting started"))
+	return reply
+}
+
 // execInfo
 func execInfo(c context.Context, ctx *CommandContext) redis.Reply {
 	argNum := ctx.GetArgNum()
@@ -138,4 +157,5 @@ func registerSystemCmd() {
 	cmdManager.registerCmd("memory", execMemory, readOnly)
 	cmdManager.registerCmd("info", execInfo, readOnly)
 	cmdManager.registerCmd("type", execType, readOnly)
+	cmdManager.registerCmd("bgrewriteaof", execRewriteAof, readOnly)
 }

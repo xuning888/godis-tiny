@@ -81,34 +81,34 @@ func nothingTodo(line database.CmdLine) {
 
 // DB 存储数据的DB
 type DB struct {
-	index        int
-	indexChecker database.IndexChecker
-	ttlChecker   database.TTLChecker
-	data         dict.Dict
-	ttlCache     ttl.Cache
-	addAof       func(line database.CmdLine)
+	index         int
+	engineCommand database.EngineCommand
+	ttlChecker    database.TTLChecker
+	data          dict.Dict
+	ttlCache      ttl.Cache
+	addAof        func(line database.CmdLine)
 }
 
 // MakeSimpleDb 使用map的实现，无锁结构
-func MakeSimpleDb(index int, indexChecker database.IndexChecker, ttlChecker database.TTLChecker) *DB {
+func MakeSimpleDb(index int, indexChecker database.EngineCommand, ttlChecker database.TTLChecker) *DB {
 	return &DB{
-		index:        index,
-		indexChecker: indexChecker,
-		ttlChecker:   ttlChecker,
-		data:         dict.MakeSimpleDict(),
-		ttlCache:     ttl.MakeSimple(),
-		addAof:       nothingTodo,
+		index:         index,
+		engineCommand: indexChecker,
+		ttlChecker:    ttlChecker,
+		data:          dict.MakeSimpleDict(),
+		ttlCache:      ttl.MakeSimple(),
+		addAof:        nothingTodo,
 	}
 }
 
 // MakeSimpleSync 使用sync.Map的实现
-func MakeSimpleSync(index int, checker database.IndexChecker, ttlChecker database.TTLChecker) *DB {
+func MakeSimpleSync(index int, checker database.EngineCommand, ttlChecker database.TTLChecker) *DB {
 	return &DB{
-		index:        index,
-		indexChecker: checker,
-		ttlChecker:   ttlChecker,
-		data:         dict.MakeSimpleSync(),
-		ttlCache:     ttl.MakeSimple(),
+		index:         index,
+		engineCommand: checker,
+		ttlChecker:    ttlChecker,
+		data:          dict.MakeSimpleSync(),
+		ttlCache:      ttl.MakeSimple(),
 	}
 }
 
@@ -127,6 +127,19 @@ func (db *DB) Exec(c context.Context, ctx *CommandContext) redis.Reply {
 }
 
 /* ---- Data Access ----- */
+
+func (db *DB) ForEach(cb func(key string, data *database.DataEntity, expiration *time.Time) bool) {
+	db.data.ForEach(func(key string, val interface{}) bool {
+		entity, _ := val.(*database.DataEntity)
+		var expiration *time.Time = nil
+		expired, exists := db.ttlCache.IsExpired(key)
+		if exists && !expired {
+			expireTime := db.ttlCache.ExpireAt(key)
+			expiration = &expireTime
+		}
+		return cb(key, entity, expiration)
+	})
+}
 
 // GetEntity getData
 func (db *DB) GetEntity(key string) (*database.DataEntity, bool) {
