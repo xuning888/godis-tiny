@@ -8,6 +8,7 @@ import (
 	"godis-tiny/redis/connection"
 	"godis-tiny/redis/parser"
 	"godis-tiny/redis/protocol"
+	"io"
 	"net"
 	"syscall"
 	"time"
@@ -39,12 +40,15 @@ func (r *RedisServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 }
 
 func (r *RedisServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
+	remoteAddr := c.RemoteAddr()
 	if err != nil {
-		if !errors.Is(err, syscall.ECONNRESET) {
-			r.lg.Sugar().Errorf("conn: %v closed, error: %v", c.RemoteAddr(), err)
+		if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			r.lg.Sugar().Infof("conn: %v, closed", remoteAddr)
 		} else {
-			r.lg.Sugar().Infof("conn: %v, closed", c.RemoteAddr())
+			r.lg.Sugar().Errorf("conn: %v closed, error: %v", remoteAddr, err)
 		}
+	} else {
+		r.lg.Sugar().Infof("conn: %v, closed", remoteAddr)
 	}
 	r.connManager.RemoveConnByKey(c.RemoteAddr().String())
 	return
