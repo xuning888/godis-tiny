@@ -146,7 +146,12 @@ type StandardErrReply struct {
 }
 
 func (s *StandardErrReply) ToBytes() []byte {
-	return []byte("-" + s.Status + CRLF)
+	bufLen := 3 + len(s.Status)
+	buff := make([]byte, 0, bufLen)
+	buff = append(buff, []byte{'-'}...)
+	buff = append(buff, []byte(s.Status)...)
+	buff = append(buff, CRLFBytes...)
+	return buff
 }
 
 func MakeStandardErrReply(status string) *StandardErrReply {

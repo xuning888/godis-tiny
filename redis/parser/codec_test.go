@@ -69,7 +69,7 @@ func TestDecode(t *testing.T) {
 				{'+', 'p', 'i', 'n', 'g'}, {'\r', '\n'},
 			},
 			expectedReplies: []redis.Reply{
-				protocol.MakeSimpleReply(util.ToCmdLine("+ping")[0]),
+				protocol.MakeMultiBulkReply(util.ToCmdLine("+ping")),
 			},
 			expectedError: nil,
 		},
@@ -111,23 +111,49 @@ func TestDecode(t *testing.T) {
 			},
 			expectedError: NewErrProtocol("invalid bulk length"),
 		},
+		{
+			Name: "ttt",
+			InputBytes: [][]byte{
+				{'*', '1', '\r', '\n'},
+				{'$', '4', '\r', '\n'},
+				{'p', 'i', 'n', 'g', '\r', '\n', '*', '1', '\r'},
+				{'\n'},
+			},
+			expectedReplies: []redis.Reply{
+				protocol.MakeMultiBulkReply(util.ToCmdLine("ping")),
+			},
+		},
 	}
 
 	codec := NewCodec()
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
+			idx := 0
 			for _, bytes := range tc.InputBytes {
 				replies, err := codec.Decode(bytes)
-				if err != nil {
+				if err != nil && len(replies) == 0 {
 					if errors.Is(err, ErrIncompletePacket) {
 						continue
 					}
 					assert.Equal(t, tc.expectedError, err)
 					break
-				}
-				for idx, reply := range replies {
-					expected := tc.expectedReplies[idx]
-					assert.True(t, arrayEqual(expected.ToBytes(), reply.ToBytes()))
+				} else if err != nil && len(replies) != 0 {
+					for _, reply := range replies {
+						expected := tc.expectedReplies[idx]
+						idx++
+						assert.True(t, arrayEqual(expected.ToBytes(), reply.ToBytes()))
+					}
+					if errors.Is(err, ErrIncompletePacket) {
+						continue
+					}
+					assert.Equal(t, tc.expectedError, err)
+					break
+				} else {
+					for _, reply := range replies {
+						expected := tc.expectedReplies[idx]
+						idx++
+						assert.True(t, arrayEqual(expected.ToBytes(), reply.ToBytes()))
+					}
 				}
 			}
 			assert.Equal(t, 0, len(codec.buf))

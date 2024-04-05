@@ -2,16 +2,17 @@ package persistence
 
 import (
 	"context"
+	"errors"
 	"go.uber.org/zap"
 	"godis-tiny/interface/database"
 	"godis-tiny/pkg/logger"
 	"godis-tiny/pkg/util"
-	"godis-tiny/pkg/wait"
 	"godis-tiny/redis/connection"
 	"godis-tiny/redis/parser"
 	"godis-tiny/redis/protocol"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,7 +20,7 @@ import (
 )
 
 const (
-	aofQueueSize = 1
+	aofQueueSize = 1 << 18
 )
 
 const (
@@ -49,6 +50,7 @@ type Listener interface {
 
 // Aof persistence
 type Aof struct {
+	wg          sync.WaitGroup
 	status      uint32
 	db          database.DBEngine
 	tempDbMaker func() database.DBEngine
@@ -69,10 +71,12 @@ type Aof struct {
 	// ctx
 	ctx context.Context
 	// cancel
-	cancel             context.CancelFunc
-	lg                 *zap.Logger
-	mux                sync.Mutex
-	wait               wait.Wait
+	cancel context.CancelFunc
+	// logger
+	lg *zap.Logger
+	// mux
+	mux sync.Mutex
+	// lastRewriteAofSize
 	lastRewriteAofSize int64
 }
 
@@ -110,15 +114,17 @@ func (a *Aof) AppendAof(dbIndex int, cmdLine CmdLine) {
 
 // addToAofBuffer add command to aof channel
 func (a *Aof) addToAofBuffer(p *payload) {
-	go func() {
-		defer a.wait.Done()
-		a.wait.Add(1)
+	a.wg.Add(1)
+	add := func(pp *payload) {
+		defer a.wg.Done()
 		select {
 		case <-a.ctx.Done():
 			return
-		case a.aofChan <- p:
+		case a.aofChan <- pp:
+			return
 		}
-	}()
+	}
+	go add(p)
 }
 
 func (a *Aof) writeAof(p *payload) {
@@ -216,11 +222,14 @@ func (a *Aof) LoadAof(maxBytes int) {
 }
 
 func (a *Aof) listenCmd() {
-	ch := a.aofChan
-	for p := range ch {
-		a.writeAof(p)
+	for {
+		select {
+		case p := <-a.aofChan:
+			a.writeAof(p)
+		case <-a.ctx.Done():
+			return
+		}
 	}
-	a.aofFinished <- struct{}{}
 }
 
 func (a *Aof) fsyncEverySecond() {
@@ -244,45 +253,46 @@ func (a *Aof) fsyncEverySecond() {
 	}()
 }
 
-func (a *Aof) Close() {
-	a.wait.Wait()
-	if a.aofFile != nil {
-		for chanLen := len(a.aofChan); chanLen > 0; {
-			a.lg.Sugar().Warnf("aof chan size: %v", chanLen)
-			time.Sleep(time.Millisecond * 100)
+func (a *Aof) Shutdown(ctx context.Context) (err error) {
+	defer a.lg.Sync()
+	cnt := 0
+	// 调用cancel, 关闭其他的goroutine
+	defer func() {
+		a.cancel()
+		a.lg.Sugar().Infof("shutdown aof cnt: %v", cnt)
+		// 把文件数据落盘
+		if err = a.aofFile.Sync(); err != nil {
+			a.lg.Sugar().Errorf("shutdown Aof sync aofFile failed with error: %v", err)
 		}
-		close(a.aofChan)
-		<-a.aofFinished
-		err := a.aofFile.Close()
-		if err != nil {
-			a.lg.Sugar().Warnf("close aof file failed with error: %v", err)
+		// 关闭aof文件
+		if err = a.aofFile.Close(); err != nil {
+			a.lg.Sugar().Errorf("close aof file failed with error: %v", err)
 		}
-	}
-	a.cancel()
-}
-
-func (a *Aof) Shutdown(ctx context.Context) error {
-	a.lg.Sugar().Info("shutdown aof...")
-	a.wait.Wait()
-	a.cancel()
-	close(a.aofChan)
-	for lenAofChan := len(a.aofChan); lenAofChan > 0; {
+		a.lg.Sugar().Info("shutdown aof complete...")
+	}()
+	// 等待aof都推送到aofChan中
+	a.lg.Sugar().Info("shutdown aof")
+	a.wg.Wait()
+	a.lg.Sugar().Infof("shutdown aof begin...")
+	ticker := time.NewTicker(time.Millisecond * 10)
+	defer ticker.Stop()
+	for {
+		// 等待aofChan被缓慢消费
+		var lenAofChan int
+		if lenAofChan = len(a.aofChan); lenAofChan == 0 {
+			break
+		}
+		cnt += lenAofChan
+		a.lg.Sugar().Infof("Shutdown aof lenAofChan: %v", lenAofChan)
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Millisecond * 10):
-			a.lg.Sugar().Warnf("aof chan len: %v", lenAofChan)
+			err = ctx.Err()
+			return
+		case <-ticker.C:
+			continue
 		}
 	}
-	<-a.aofFinished
-	var err error
-	if err = a.aofFile.Sync(); err != nil {
-		a.lg.Sugar().Errorf("shutdown Aof sync aofFile failed with error: %v", err)
-	}
-	if err = a.aofFile.Close(); err != nil {
-		a.lg.Sugar().Errorf("close aof file failed with error: %v", err)
-	}
-	return err
+	return
 }
 
 func NewAof(db database.DBEngine, filename string, fsync string, tempDbMaker func() database.DBEngine) (*Aof, error) {
@@ -296,7 +306,7 @@ func NewAof(db database.DBEngine, filename string, fsync string, tempDbMaker fun
 
 	persister.tempDbMaker = tempDbMaker
 	// 创建aof文件
-	aofFile, err := os.OpenFile(persister.aofFilename, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0600)
+	aofFile, err := initFile(persister.aofFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -324,4 +334,16 @@ func NewAof(db database.DBEngine, filename string, fsync string, tempDbMaker fun
 		persister.fsyncEverySecond()
 	}
 	return persister, nil
+}
+
+func initFile(path string) (file *os.File, err error) {
+	dir := filepath.Dir(path)
+	err = os.Mkdir(dir, 0755)
+	if err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+	}
+	file, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0600)
+	return
 }

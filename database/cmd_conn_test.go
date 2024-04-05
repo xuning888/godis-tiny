@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"github.com/stretchr/testify/assert"
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
@@ -48,7 +49,7 @@ func TestPing(t *testing.T) {
 			assert.Equal(t, tc.wantReply, actualReply)
 		})
 	}
-	_ = server.Close()
+	_ = server.Shutdown(context.Background())
 }
 
 func TestSelectDb(t *testing.T) {
@@ -100,6 +101,6 @@ func TestSelectDb(t *testing.T) {
 		})
 	}
 
-	err := server.Close()
+	err := server.Shutdown(context.Background())
 	assert.Nil(t, err)
 }

@@ -95,7 +95,10 @@ func (s *SimpleCache) Len() int {
 }
 
 func (s *SimpleCache) Clear() {
-	*s = *MakeSimple()
+	h := make(ttlHeap, 0)
+	heap.Init(&h)
+	s.heap = h
+	s.ttlMap = make(map[string]*Item)
 }
 
 func MakeSimple() *SimpleCache {

@@ -59,12 +59,12 @@ func (c *Codec) Decode(data []byte) ([]redis.Reply, error) {
 	for c.buf.isReadable() {
 		decode, err := c.getDecode()
 		if err != nil {
-			return nil, handleDecodeError(err, c)
+			return replies, handleDecodeError(err, c)
 		}
 
 		line, err := decode()
 		if err != nil {
-			return nil, handleDecodeError(err, c)
+			return replies, handleDecodeError(err, c)
 		}
 
 		if line != nil {
@@ -88,7 +88,7 @@ func appendReply(reply []byte, replies []redis.Reply, c *Codec) []redis.Reply {
 			c.argsBuf = make([][]byte, 0)
 		}
 	} else {
-		message := protocol.MakeSimpleReply(reply)
+		message := protocol.MakeMultiBulkReply([][]byte{reply})
 		replies = append(replies, message)
 	}
 	return replies

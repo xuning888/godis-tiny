@@ -227,34 +227,31 @@ func execIncr(c context.Context, ctx *CommandContext) redis.Reply {
 	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
 	db := ctx.GetDb()
-	valueBytes, reply := db.getAsString(key)
-	// 如果key不存在，就放一个1进去
-	if valueBytes == nil && reply == nil {
+	entity, exists := db.GetEntity(key)
+	if !exists {
 		db.PutEntity(key, &database.DataEntity{
 			Type: database.String,
 			Data: []byte("1"),
 		})
-		ctx.GetDb().addAof(ctx.GetCmdLine())
+		db.addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(1)
-	} else if reply != nil {
-		return reply
-	} else {
-		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
-		if err != nil {
-			return protocol.MakeOutOfRangeOrNotInt()
-		}
-		if math.MaxInt64-1 < value {
-			return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
-		}
-		value++
-		valueStr := strconv.FormatInt(value, 10)
-		db.PutEntity(key, &database.DataEntity{
-			Type: database.String,
-			Data: []byte(valueStr),
-		})
-		ctx.GetDb().addAof(ctx.GetCmdLine())
-		return protocol.MakeIntReply(value)
 	}
+	valueBytes, ok := entity.Data.([]byte)
+	if !ok {
+		return protocol.MakeWrongTypeErrReply()
+	}
+	value, err := strconv.ParseInt(string(valueBytes), 10, 64)
+	if err != nil {
+		return protocol.MakeOutOfRangeOrNotInt()
+	}
+	if math.MaxInt64-1 < value {
+		return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
+	}
+	value++
+	valueStr := strconv.FormatInt(value, 10)
+	entity.Data = []byte(valueStr)
+	db.addAof(ctx.GetCmdLine())
+	return protocol.MakeIntReply(value)
 }
 
 // execDecr decr key

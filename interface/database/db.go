@@ -23,12 +23,10 @@ type CmdLine = [][]byte
 
 // DBEngine 存储引擎的抽象
 type DBEngine interface {
-	// Close 关闭
-	Close() error
 	// Init 做必要的初始化工作
 	Init()
 	// PushReqEvent 推送一个命令到dbEngine
-	PushReqEvent(req *CmdReq)
+	PushReqEvent(req *CmdReq) error
 	// DeliverResEvent 接收res的channel
 	DeliverResEvent() <-chan *CmdRes
 	// Exec 同步调用

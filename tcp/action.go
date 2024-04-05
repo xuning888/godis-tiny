@@ -8,8 +8,8 @@ import (
 	"godis-tiny/redis/connection"
 	"godis-tiny/redis/parser"
 	"godis-tiny/redis/protocol"
-	"golang.org/x/sys/unix"
 	"net"
+	"syscall"
 	"time"
 )
 
@@ -40,10 +40,10 @@ func (r *RedisServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 
 func (r *RedisServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	if err != nil {
-		if errors.Is(err, unix.ECONNRESET) {
-			r.lg.Sugar().Infof("conn: %v, closed", c.RemoteAddr())
+		if !errors.Is(err, syscall.ECONNRESET) {
+			r.lg.Sugar().Errorf("conn: %v closed, error: %v", c.RemoteAddr(), err)
 		} else {
-			r.lg.Sugar().Errorf("conn: %v, closed with error: %v", c.RemoteAddr(), err)
+			r.lg.Sugar().Infof("conn: %v, closed", c.RemoteAddr())
 		}
 	}
 	r.connManager.RemoveConnByKey(c.RemoteAddr().String())
@@ -64,28 +64,44 @@ func (r *RedisServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		return gnet.Close
 	}
 	replies, err := codecc.Decode(data)
-	if err != nil {
+	if err != nil && len(replies) == 0 {
 		if errors.Is(err, parser.ErrIncompletePacket) {
+			r.lg.Sugar().Error("ErrIncompletePacket1")
 			return gnet.None
 		}
 		r.lg.Sugar().Errorf("decode falied with error: %v", err)
 		err = r.quickWrite(c, protocol.MakeStandardErrReply(err.Error()).ToBytes())
 		if err != nil {
 			r.lg.Sugar().Errorf("write to peer falied with error: %v", err)
-			return gnet.Close
+		}
+		return gnet.Close
+	} else if err != nil && len(replies) != 0 {
+		for _, value := range replies {
+			cmd, _ := value.(*protocol.MultiBulkReply)
+			cmdReq := database2.MakeCmdReq(conn, cmd.Args)
+			err2 := r.dbEngine.PushReqEvent(cmdReq)
+			if err2 != nil {
+				return gnet.Close
+			}
+		}
+		if errors.Is(err, parser.ErrIncompletePacket) {
+			r.lg.Sugar().Error("ErrIncompletePacket1")
+			return gnet.None
+		}
+		r.lg.Sugar().Errorf("decode falied with error: %v", err)
+		err = r.quickWrite(c, protocol.MakeStandardErrReply(err.Error()).ToBytes())
+		if err != nil {
+			r.lg.Sugar().Errorf("write to peer falied with error: %v", err)
 		}
 		return gnet.Close
 	}
 	for _, value := range replies {
-		cmd, ok := value.(*protocol.MultiBulkReply)
-		if !ok {
-			reply := value.(*protocol.SimpleReply)
-			errReply := protocol.MakeUnknownCommand(string(reply.Arg))
-			_ = r.quickWrite(c, errReply.ToBytes())
-			continue
-		}
+		cmd, _ := value.(*protocol.MultiBulkReply)
 		cmdReq := database2.MakeCmdReq(conn, cmd.Args)
-		r.dbEngine.PushReqEvent(cmdReq)
+		err2 := r.dbEngine.PushReqEvent(cmdReq)
+		if err2 != nil {
+			return gnet.Close
+		}
 	}
 	return
 }

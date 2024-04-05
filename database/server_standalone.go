@@ -8,11 +8,13 @@ import (
 	"godis-tiny/interface/database"
 	"godis-tiny/interface/redis"
 	"godis-tiny/persistence"
+	atomic2 "godis-tiny/pkg/atomic"
 	"godis-tiny/pkg/logger"
 	"godis-tiny/pkg/util"
 	"godis-tiny/redis/connection"
 	"godis-tiny/redis/protocol"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -21,6 +23,9 @@ var _ database.DBEngine = &Standalone{}
 
 // Standalone 单机存储的存储引擎
 type Standalone struct {
+	shutdown *atomic2.Boolean
+	reqWait  sync.WaitGroup
+	resWait  sync.WaitGroup
 	ctx      context.Context
 	cancel   func()
 	dbSet    []*atomic.Value
@@ -64,8 +69,10 @@ func (s *Standalone) aofRewrite() {
 	if rewriteNeeded {
 		go func() {
 			err2 := s.aof.Rewrite()
-			if err2 != nil && !errors.Is(err2, persistence.ErrAofRewriteIsRunning) {
-				s.lg.Sugar().Errorf("aof rewrite failed with error: %v", err2)
+			if err2 != nil {
+				if !errors.Is(err2, persistence.ErrAofRewriteIsRunning) {
+					s.lg.Sugar().Errorf("aof rewrite failed with error: %v", err2)
+				}
 			} else {
 				s.lg.Sugar().Info("aof rewrite successfully")
 			}
@@ -83,6 +90,7 @@ var multi = runtime.NumCPU()
 func MakeStandalone() *Standalone {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	server := &Standalone{
+		shutdown: new(atomic2.Boolean),
 		resQueue: make(chan *database.CmdRes, multi),
 		reqQueue: make(chan *database.CmdReq, multi),
 	}
@@ -108,7 +116,7 @@ func MakeStandalone() *Standalone {
 
 	if config.Properties.AppendOnly {
 		aofServer, err := persistence.NewAof(
-			server, config.Properties.AppendFilename, config.Properties.AppendFsync, MakeTemp)
+			server, config.AppendOnlyDir+config.Properties.AppendFilename, config.Properties.AppendFsync, MakeTemp)
 		if err != nil {
 			panic(err)
 		}
@@ -141,22 +149,32 @@ func (s *Standalone) Rewrite() error {
 	return s.aof.Rewrite()
 }
 
-func (s *Standalone) PushReqEvent(req *database.CmdReq) {
+var ErrorsShutdown = errors.New("shutdown")
+
+func (s *Standalone) PushReqEvent(req *database.CmdReq) error {
+	if s.shutdown.Get() {
+		return ErrorsShutdown
+	}
+	s.reqWait.Add(1)
 	go func() {
+		defer s.reqWait.Done()
+		reqq := req
 		select {
 		case <-s.ctx.Done():
 			s.lg.Sugar().Errorf("push aborted: Standalone is shutting down")
 			return
-		case s.reqQueue <- req:
+		case s.reqQueue <- reqq:
 			return
 		}
 	}()
+	return nil
 }
 
 func (s *Standalone) DeliverResEvent() <-chan *database.CmdRes {
 	return s.resQueue
 }
 
+// Exec 这是一个无锁实现, 用于AofLoad
 func (s *Standalone) Exec(req *database.CmdReq) *database.CmdRes {
 	return s.doExec(req)
 }
@@ -209,18 +227,6 @@ func (s *Standalone) selectDb(index int) (*DB, redis.Reply) {
 	return s.dbSet[index].Load().(*DB), nil
 }
 
-// Close 关闭资源
-func (s *Standalone) Close() error {
-	s.lg.Sugar().Infof("close standalone dbEngine")
-	// 关闭接收命令的队列
-	close(s.reqQueue)
-	// 关闭返回结果的队列
-	close(s.resQueue)
-	// 关闭aof
-	s.aof.Close()
-	return nil
-}
-
 // Init 初始化 standalone，开启一个消费者消费cmdReqQueue中的命令
 func (s *Standalone) Init() {
 	initResister()
@@ -243,12 +249,21 @@ func (s *Standalone) bindPersister(aof *persistence.Aof) {
 	}
 }
 
-func (s *Standalone) Shutdown(cancelCtx context.Context) error {
+// Shutdown 先处理AOF的落盘, 保证已经执行过的指令不丢。
+// 随后拒绝未进入队列的的请求
+func (s *Standalone) Shutdown(cancelCtx context.Context) (err error) {
 	s.lg.Sugar().Info("shutdown dbEngine...")
+	// 拒绝新的请求
+	s.shutdown.Set(true)
+	// 等待已经接收的请求执行
+	s.reqWait.Wait()
+	// 等待执行完的请求返回数据
+	s.resWait.Wait()
 	s.cancel()
-	close(s.reqQueue)
-	close(s.resQueue)
-	return s.aof.Shutdown(cancelCtx)
+	if config.Properties.AppendOnly {
+		return s.aof.Shutdown(cancelCtx)
+	}
+	return
 }
 
 // startCmdConsumer 开启一个协程消费指令
@@ -257,7 +272,7 @@ func (s *Standalone) startCmdConsumer() {
 		for {
 			select {
 			case <-s.ctx.Done():
-				s.lg.Info("cmdReqQueue is closed")
+				s.lg.Info("receive cmdRequeue closed")
 				return
 			case cmdReq, ok := <-s.reqQueue:
 				if !ok {
@@ -268,7 +283,13 @@ func (s *Standalone) startCmdConsumer() {
 				if cmdRes == nil || cmdRes.GetConn().IsInner() {
 					continue
 				}
-				s.resQueue <- cmdRes
+
+				devl := func(res *database.CmdRes) {
+					defer s.resWait.Done()
+					s.resQueue <- res
+				}
+				s.resWait.Add(1)
+				devl(cmdRes)
 			}
 		}
 	}()

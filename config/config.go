@@ -14,6 +14,8 @@ import (
 
 var defaultMaxClients = 10000
 
+var AppendOnlyDir = "appendOnlyDir/"
+
 type ServerProperties struct {
 	RunID                string `cfg:"runid"`
 	Bind                 string `cfg:"bind"`
@@ -123,5 +125,5 @@ func SetUpConfig(filename string) {
 }
 
 func TmpDir() string {
-	return Properties.Dir + "/tmp"
+	return AppendOnlyDir + "rewrite-tmp"
 }
