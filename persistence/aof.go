@@ -1,6 +1,7 @@
 package persistence
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"go.uber.org/zap"
@@ -20,7 +21,8 @@ import (
 )
 
 const (
-	aofQueueSize = 1 << 18
+	// aofBufferSize aof缓冲区大小16MB
+	aofBufferSize = 1 << 24
 )
 
 const (
@@ -28,6 +30,40 @@ const (
 	none
 	rewrite
 )
+
+type FileBuffer struct {
+	file   *os.File
+	writer *bufio.Writer
+}
+
+// Write
+// 写入缓冲区，如果p的大小大于了缓冲区的可用大小
+func (f *FileBuffer) Write(p []byte) (int, error) {
+	return f.writer.Write(p)
+}
+
+func (f *FileBuffer) Sync() error {
+	err := f.writer.Flush()
+	if err != nil {
+		return err
+	}
+	return f.file.Sync()
+}
+
+func (f *FileBuffer) Close() error {
+	return f.file.Close()
+}
+
+func (f *FileBuffer) Buffered() int {
+	return f.writer.Buffered()
+}
+
+func NewFileBuffer(f *os.File, bufSize int) *FileBuffer {
+	return &FileBuffer{
+		file:   f,
+		writer: bufio.NewWriterSize(f, bufSize),
+	}
+}
 
 const (
 	// FsyncAlways do fsync for every command
@@ -50,7 +86,6 @@ type Listener interface {
 
 // Aof persistence
 type Aof struct {
-	wg          sync.WaitGroup
 	status      uint32
 	db          database.DBEngine
 	tempDbMaker func() database.DBEngine
@@ -59,9 +94,7 @@ type Aof struct {
 	// aofFsync
 	aofFsync string
 	// aofFile
-	aofFile *os.File
-	// aofChan
-	aofChan chan *payload
+	fileBuffer *FileBuffer
 	// aofFinished
 	aofFinished chan struct{}
 	// currentDb 后续命令操作的db
@@ -95,7 +128,7 @@ func (a *Aof) LasAofRewriteSize() int64 {
 }
 
 func (a *Aof) AppendAof(dbIndex int, cmdLine CmdLine) {
-	if a.aofChan == nil {
+	if a.fileBuffer == nil {
 		return
 	}
 
@@ -104,27 +137,7 @@ func (a *Aof) AppendAof(dbIndex int, cmdLine CmdLine) {
 		cmdLine: cmdLine,
 	}
 
-	// fsync == always
-	if a.aofFsync == FsyncAlways {
-		a.writeAof(p)
-		return
-	}
-	a.addToAofBuffer(p)
-}
-
-// addToAofBuffer add command to aof channel
-func (a *Aof) addToAofBuffer(p *payload) {
-	a.wg.Add(1)
-	add := func(pp *payload) {
-		defer a.wg.Done()
-		select {
-		case <-a.ctx.Done():
-			return
-		case a.aofChan <- pp:
-			return
-		}
-	}
-	go add(p)
+	a.writeAof(p)
 }
 
 func (a *Aof) writeAof(p *payload) {
@@ -136,7 +149,7 @@ func (a *Aof) writeAof(p *payload) {
 	if p.dbIndex != a.currentDb {
 		selectCmd := util.ToCmdLine("SELECT", strconv.Itoa(p.dbIndex))
 		selectData := protocol.MakeMultiBulkReply(selectCmd).ToBytes()
-		_, err := a.aofFile.Write(selectData)
+		_, err := a.fileBuffer.Write(selectData)
 		if err != nil {
 			// 切换db失败
 			a.lg.Sugar().Errorf("write aof file buffer failed with error: %v", err)
@@ -146,14 +159,14 @@ func (a *Aof) writeAof(p *payload) {
 	}
 	cmdLineData := protocol.MakeMultiBulkReply(p.cmdLine).ToBytes()
 	// 写入文件缓冲区
-	_, err := a.aofFile.Write(cmdLineData)
+	_, err := a.fileBuffer.Write(cmdLineData)
 	if err != nil {
 		a.lg.Sugar().Errorf("write aof file buffer failed with error: %v", err)
 	}
 
 	// 如果模式是always,就将内存中的数据拷贝到磁盘
 	if a.aofFsync == FsyncAlways {
-		err = a.aofFile.Sync()
+		err = a.fileBuffer.Sync()
 		if err != nil {
 			a.lg.Sugar().Errorf("wirte aof file sync fialed with error: %v", err)
 		}
@@ -161,12 +174,12 @@ func (a *Aof) writeAof(p *payload) {
 }
 
 func (a *Aof) LoadAof(maxBytes int) {
-	// 在加载aof文件时，先把chan拿走，加载完事后再放回去
-	aofChan := a.aofChan
-	a.aofChan = nil
-	defer func(aofChan chan *payload) {
-		a.aofChan = aofChan
-	}(aofChan)
+
+	fileBuffer := a.fileBuffer
+	a.fileBuffer = nil
+	defer func(fb *FileBuffer) {
+		a.fileBuffer = fb
+	}(fileBuffer)
 
 	defer a.lg.Sync()
 
@@ -221,23 +234,15 @@ func (a *Aof) LoadAof(maxBytes int) {
 	a.lg.Sugar().Infof("load aof complete, cnt: %v", cnt)
 }
 
-func (a *Aof) listenCmd() {
-	for {
-		select {
-		case p := <-a.aofChan:
-			a.writeAof(p)
-		case <-a.ctx.Done():
-			return
-		}
-	}
-}
-
 func (a *Aof) fsyncEverySecond() {
 	ticker := time.NewTicker(time.Second)
 	fsyncEverySec := func() {
 		a.mux.Lock()
 		defer a.mux.Unlock()
-		if err := a.aofFile.Sync(); err != nil {
+		if a.fileBuffer == nil {
+			return
+		}
+		if err := a.fileBuffer.Sync(); err != nil {
 			a.lg.Sugar().Errorf("fsync everysec failed: %v", err)
 		}
 	}
@@ -255,35 +260,34 @@ func (a *Aof) fsyncEverySecond() {
 
 func (a *Aof) Shutdown(ctx context.Context) (err error) {
 	defer a.lg.Sync()
-	cnt := 0
 	// 调用cancel, 关闭其他的goroutine
 	defer func() {
 		a.cancel()
-		a.lg.Sugar().Infof("shutdown aof cnt: %v", cnt)
-		// 把文件数据落盘
-		if err = a.aofFile.Sync(); err != nil {
-			a.lg.Sugar().Errorf("shutdown Aof sync aofFile failed with error: %v", err)
-		}
 		// 关闭aof文件
-		if err = a.aofFile.Close(); err != nil {
+		if err = a.fileBuffer.Close(); err != nil {
 			a.lg.Sugar().Errorf("close aof file failed with error: %v", err)
 		}
 		a.lg.Sugar().Info("shutdown aof complete...")
 	}()
 	// 等待aof都推送到aofChan中
-	a.lg.Sugar().Info("shutdown aof")
-	a.wg.Wait()
 	a.lg.Sugar().Infof("shutdown aof begin...")
 	ticker := time.NewTicker(time.Millisecond * 10)
 	defer ticker.Stop()
+	// 尝试把文件数据都落盘
+	err = a.fileBuffer.Sync()
+	if err != nil {
+		return
+	}
 	for {
-		// 等待aofChan被缓慢消费
-		var lenAofChan int
-		if lenAofChan = len(a.aofChan); lenAofChan == 0 {
+		var buffered int
+		if buffered = a.fileBuffer.Buffered(); buffered == 0 {
 			break
 		}
-		cnt += lenAofChan
-		a.lg.Sugar().Infof("Shutdown aof lenAofChan: %v", lenAofChan)
+		err = a.fileBuffer.Sync()
+		if err != nil {
+			return
+		}
+		a.lg.Sugar().Infof("Shutdown aof buffered: %v", buffered)
 		select {
 		case <-ctx.Done():
 			err = ctx.Err()
@@ -310,9 +314,8 @@ func NewAof(db database.DBEngine, filename string, fsync string, tempDbMaker fun
 	if err != nil {
 		return nil, err
 	}
-	persister.aofFile = aofFile
+	persister.fileBuffer = NewFileBuffer(aofFile, aofBufferSize)
 
-	persister.aofChan = make(chan *payload, aofQueueSize)
 	persister.aofFinished = make(chan struct{})
 	persister.listeners = make(map[Listener]struct{})
 
@@ -325,10 +328,6 @@ func NewAof(db database.DBEngine, filename string, fsync string, tempDbMaker fun
 		return nil, err
 	}
 	persister.lg = lg.Named("aof-persister")
-
-	go func() {
-		persister.listenCmd()
-	}()
 
 	if persister.aofFsync == FsyncEverySec {
 		persister.fsyncEverySecond()

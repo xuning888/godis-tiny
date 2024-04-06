@@ -137,12 +137,19 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 		return false
 	}
 
+	// 把DoRewrite期间的产生的数据落盘
+	err2 := a.fileBuffer.Sync()
+	if err2 != nil {
+		a.lg.Sugar().Errorf("last sync aoffile fialed error %v", err2)
+		return
+	}
+
 	if errOccurs() {
 		return
 	}
 
 	// 关闭原来的aofFile
-	err := a.aofFile.Close()
+	err := a.fileBuffer.Close()
 	if err != nil {
 		a.lg.Sugar().Errorf("close aofFile failed with error: %v", err)
 	}
@@ -164,10 +171,10 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 		panic(err)
 	}
 	// 替换aofFile
-	a.aofFile = aofFile
+	a.fileBuffer = NewFileBuffer(aofFile, aofBufferSize)
 	// 插入一个aof当前记录的db的命令 select curDbIndex
 	selectBytes := protocol.MakeMultiBulkReply(util.ToCmdLine("select", strconv.Itoa(a.currentDb))).ToBytes()
-	_, err = a.aofFile.Write(selectBytes)
+	_, err = a.fileBuffer.Write(selectBytes)
 	if err != nil {
 		panic(err)
 	}
@@ -179,7 +186,7 @@ func (a *Aof) StartRewrite() (*RewriteCtx, error) {
 	defer a.mux.Unlock()
 
 	// fsync 将缓冲区中的数据落盘，防止aof文件不完整造成数据错误
-	err := a.aofFile.Sync()
+	err := a.fileBuffer.Sync()
 	if err != nil {
 		a.lg.Sugar().Warnf("fsync failed, err: %v", err)
 		return nil, err
