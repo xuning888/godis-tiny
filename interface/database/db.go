@@ -11,8 +11,11 @@ import (
 type RType string
 
 var (
-	String RType = "String"
-	List   RType = "List"
+	stringValue RType = "String"
+	listValue   RType = "List"
+
+	String = &stringValue
+	List   = &listValue
 )
 
 func (t RType) ToLower() string {
@@ -51,7 +54,7 @@ type TTLChecker interface {
 }
 
 type DataEntity struct {
-	Type RType
+	Type *RType
 	Data interface{}
 }
 

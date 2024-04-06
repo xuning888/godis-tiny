@@ -82,7 +82,9 @@ func (s *Standalone) aofRewrite() {
 
 func (s *Standalone) ForEach(dbIndex int, cb func(key string, entity *database.DataEntity, expiration *time.Time) bool) {
 	db, _ := s.selectDb(dbIndex)
-	db.ForEach(cb)
+	if db.Len() > 0 {
+		db.ForEach(cb)
+	}
 }
 
 var multi = runtime.NumCPU()

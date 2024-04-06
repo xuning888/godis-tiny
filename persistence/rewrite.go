@@ -1,6 +1,7 @@
 package persistence
 
 import (
+	"bufio"
 	"errors"
 	"godis-tiny/config"
 	"godis-tiny/datastruct/list"
@@ -16,9 +17,10 @@ import (
 )
 
 type RewriteCtx struct {
-	tmpFile  *os.File
-	fileSize int64
-	dbIdx    int
+	tmpFile     *os.File
+	fileSize    int64
+	dbIdx       int
+	writtenSize int64
 }
 
 var (
@@ -54,10 +56,17 @@ func (a *Aof) Rewrite() error {
 	return nil
 }
 
-func (a *Aof) DoRewrite(ctx *RewriteCtx) error {
+func (a *Aof) DoRewrite(ctx *RewriteCtx) (err error) {
 
 	// 临时文件
 	tmpFile := ctx.tmpFile
+	buffer := bufio.NewWriterSize(tmpFile, int(ctx.fileSize))
+	defer func() {
+		err = buffer.Flush()
+		if err != nil {
+			a.lg.Sugar().Errorf("DoRewrite flush aof file failed with error: %v", err)
+		}
+	}()
 
 	// 将重写开始前的数据加载到内存
 	tmpAof := a.newRewriteHandler()
@@ -70,20 +79,23 @@ func (a *Aof) DoRewrite(ctx *RewriteCtx) error {
 	for i := 0; i < config.Properties.Databases; i++ {
 		// select db
 		data := protocol.MakeMultiBulkReply(util.ToCmdLine("select", strconv.Itoa(i))).ToBytes()
-		_, err := tmpFile.Write(data)
+		written1, err := buffer.Write(data)
 		if err != nil {
 			return err
 		}
+		ctx.writtenSize += int64(written1)
 		// 将内存中的数据写入临时文件
 		tmpAof.db.ForEach(i, func(key string, entity *database.DataEntity, expiration *time.Time) bool {
 			cmd := EntityToCmd(key, entity)
 			if cmd != nil {
-				_, _ = tmpFile.Write(cmd.ToBytes())
+				written2, _ := buffer.Write(cmd.ToBytes())
+				ctx.writtenSize += int64(written2)
 			}
 			if expiration != nil {
 				expireCmd := ExpireCmd(key, expiration)
 				if expireCmd != nil {
-					_, _ = tmpFile.Write(expireCmd.ToBytes())
+					written3, _ := buffer.Write(expireCmd.ToBytes())
+					ctx.writtenSize += int64(written3)
 				}
 			}
 			return true
@@ -107,7 +119,9 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 			return true
 		}
 
+		buffer := bufio.NewWriter(tmpFile)
 		defer func() {
+			_ = buffer.Flush()
 			_ = src.Close()
 			_ = tmpFile.Close()
 		}()
@@ -122,18 +136,20 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 		// 插入一个aof重写前aof写入时使用的db
 		selectDbBytes := protocol.MakeMultiBulkReply(util.ToCmdLine("select", strconv.Itoa(ctx.dbIdx))).ToBytes()
 
-		_, err = tmpFile.Write(selectDbBytes)
+		written1, err := buffer.Write(selectDbBytes)
 		if err != nil {
 			a.lg.Sugar().Errorf("tmp file rewrite failed with error: %v", err)
 			return true
 		}
+		ctx.writtenSize += int64(written1)
 
 		// 把重写时可能写入到原来aof文件中命令拷贝到tmp文件中
-		_, err = io.Copy(tmpFile, src)
+		written2, err := io.Copy(buffer, src)
 		if err != nil {
 			a.lg.Sugar().Errorf("copy aof file failed with error: %v", err)
 			return true
 		}
+		ctx.writtenSize += written2
 		return false
 	}
 
@@ -158,12 +174,8 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 		a.lg.Sugar().Errorf("rename aof file failed with error: %v", err)
 	}
 
-	stat, err := os.Stat(a.aofFilename)
-	if err != nil {
-		panic(err)
-	}
 	// 记录aof重写完成后的文件大小
-	a.lastRewriteAofSize = stat.Size()
+	a.lastRewriteAofSize = ctx.writtenSize
 
 	// 重新打开 aofFile
 	aofFile, err := os.OpenFile(a.aofFilename, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0600)
@@ -219,7 +231,8 @@ func (a *Aof) StartRewrite() (*RewriteCtx, error) {
 		// fileSize aof文件的大小
 		fileSize: filesize,
 		// aof记录的dbIndex
-		dbIdx: a.currentDb,
+		dbIdx:       a.currentDb,
+		writtenSize: 0,
 	}
 	return ctx, nil
 }

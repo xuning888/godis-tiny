@@ -242,6 +242,10 @@ func (a *Aof) fsyncEverySecond() {
 		if a.fileBuffer == nil {
 			return
 		}
+		// 尽量减少sync的次数
+		if a.fileBuffer.Buffered() == 0 {
+			return
+		}
 		if err := a.fileBuffer.Sync(); err != nil {
 			a.lg.Sugar().Errorf("fsync everysec failed: %v", err)
 		}

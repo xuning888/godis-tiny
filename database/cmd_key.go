@@ -19,12 +19,12 @@ func execDel(c context.Context, ctx *CommandContext) redis.Reply {
 		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
 	cmdData := ctx.GetArgs()
-	keys := make([]string, len(cmdData))
-	for i := 0; i < len(cmdData); i++ {
-		keys[i] = string(cmdData[i])
-	}
+	var deleted = 0
 	db := ctx.GetDb()
-	deleted := db.Removes(keys...)
+	for i := 0; i < len(cmdData); i++ {
+		result := db.Remove(string(cmdData[i]))
+		deleted += result
+	}
 	if deleted > 0 {
 		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(int64(deleted))

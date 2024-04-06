@@ -164,9 +164,12 @@ func (db *DB) PutIfAbsent(key string, entity *database.DataEntity) int {
 }
 
 // Remove 删除数据
-func (db *DB) Remove(key string) {
-	db.data.Remove(key)
-	db.ttlCache.Remove(key)
+func (db *DB) Remove(key string) int {
+	result := db.data.Remove(key)
+	if result > 0 {
+		db.ttlCache.Remove(key)
+	}
+	return result
 }
 
 func (db *DB) Removes(keys ...string) (deleted int) {
@@ -174,11 +177,15 @@ func (db *DB) Removes(keys ...string) (deleted int) {
 	for _, key := range keys {
 		_, exists := db.data.Get(key)
 		if exists {
-			db.Remove(key)
-			deleted++
+			remove := db.Remove(key)
+			deleted += remove
 		}
 	}
 	return deleted
+}
+
+func (db *DB) Len() int {
+	return db.data.Len()
 }
 
 // Exists 返回一组key是否存在
