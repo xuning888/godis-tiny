@@ -2,8 +2,8 @@ package database
 
 import (
 	"context"
-	"godis-tiny/datastruct/list"
-	"godis-tiny/interface/redis"
+	"github.com/xuning888/godis-tiny/datastruct/list"
+	"github.com/xuning888/godis-tiny/interface/redis"
 	"strings"
 	"time"
 )

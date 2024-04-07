@@ -1,4 +1,4 @@
-module godis-tiny
+module github.com/xuning888/godis-tiny
 
 go 1.17
 

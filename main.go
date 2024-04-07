@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"godis-tiny/config"
-	"godis-tiny/pkg/logger"
-	"godis-tiny/pkg/util"
-	"godis-tiny/tcp"
+	"github.com/xuning888/godis-tiny/config"
+	"github.com/xuning888/godis-tiny/pkg/logger"
+	"github.com/xuning888/godis-tiny/pkg/util"
+	"github.com/xuning888/godis-tiny/tcp"
 	"os"
 )
 

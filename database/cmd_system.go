@@ -3,10 +3,10 @@ package database
 import (
 	"context"
 	"fmt"
-	"godis-tiny/config"
-	"godis-tiny/interface/redis"
-	"godis-tiny/redis/connection"
-	"godis-tiny/redis/protocol"
+	"github.com/xuning888/godis-tiny/config"
+	"github.com/xuning888/godis-tiny/interface/redis"
+	"github.com/xuning888/godis-tiny/redis/connection"
+	"github.com/xuning888/godis-tiny/redis/protocol"
 	"log"
 	"strings"
 )

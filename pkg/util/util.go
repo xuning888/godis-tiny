@@ -1,7 +1,7 @@
 package util
 
 import (
-	"godis-tiny/interface/database"
+	"github.com/xuning888/godis-tiny/interface/database"
 	"io"
 	"log"
 	"math/rand"

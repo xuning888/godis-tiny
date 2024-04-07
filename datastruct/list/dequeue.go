@@ -1,6 +1,6 @@
 package list
 
-import "godis-tiny/interface/redis"
+import "github.com/xuning888/godis-tiny/interface/redis"
 
 type Dequeue interface {
 	AddFirst(ele interface{}) error

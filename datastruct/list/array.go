@@ -2,7 +2,7 @@ package list
 
 import (
 	"errors"
-	"godis-tiny/interface/redis"
+	"github.com/xuning888/godis-tiny/interface/redis"
 )
 
 var _ Dequeue = &ArrayDeque{}

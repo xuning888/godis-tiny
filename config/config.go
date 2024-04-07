@@ -2,7 +2,7 @@ package config
 
 import (
 	"bufio"
-	"godis-tiny/pkg/util"
+	"github.com/xuning888/godis-tiny/pkg/util"
 	"io"
 	"log"
 	"os"

@@ -2,8 +2,8 @@ package connection
 
 import (
 	"github.com/panjf2000/gnet/v2"
-	"godis-tiny/interface/redis"
-	"godis-tiny/pkg/wait"
+	"github.com/xuning888/godis-tiny/interface/redis"
+	"github.com/xuning888/godis-tiny/pkg/wait"
 	"net"
 	"sync"
 	"time"

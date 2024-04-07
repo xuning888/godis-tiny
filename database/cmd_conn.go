@@ -2,8 +2,8 @@ package database
 
 import (
 	"context"
-	"godis-tiny/interface/redis"
-	"godis-tiny/redis/protocol"
+	"github.com/xuning888/godis-tiny/interface/redis"
+	"github.com/xuning888/godis-tiny/redis/protocol"
 	"strconv"
 )
 

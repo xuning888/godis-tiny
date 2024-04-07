@@ -3,11 +3,11 @@ package database
 import (
 	"context"
 	"errors"
-	"godis-tiny/datastruct/list"
-	"godis-tiny/interface/database"
-	"godis-tiny/interface/redis"
-	"godis-tiny/pkg/util"
-	"godis-tiny/redis/protocol"
+	"github.com/xuning888/godis-tiny/datastruct/list"
+	"github.com/xuning888/godis-tiny/interface/database"
+	"github.com/xuning888/godis-tiny/interface/redis"
+	"github.com/xuning888/godis-tiny/pkg/util"
+	"github.com/xuning888/godis-tiny/redis/protocol"
 	"strconv"
 )
 

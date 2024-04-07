@@ -3,7 +3,7 @@ package protocol
 import (
 	"bytes"
 	"fmt"
-	"godis-tiny/interface/redis"
+	"github.com/xuning888/godis-tiny/interface/redis"
 	"strconv"
 	"strings"
 )

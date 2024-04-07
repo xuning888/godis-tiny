@@ -1,7 +1,7 @@
 package connection
 
 import (
-	"godis-tiny/interface/redis"
+	"github.com/xuning888/godis-tiny/interface/redis"
 )
 
 type SimpleConnManager struct {

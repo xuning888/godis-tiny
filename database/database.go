@@ -2,12 +2,12 @@ package database
 
 import (
 	"context"
-	"godis-tiny/datastruct/dict"
-	"godis-tiny/datastruct/ttl"
-	"godis-tiny/interface/database"
-	"godis-tiny/interface/redis"
-	"godis-tiny/pkg/logger"
-	"godis-tiny/redis/protocol"
+	"github.com/xuning888/godis-tiny/datastruct/dict"
+	"github.com/xuning888/godis-tiny/datastruct/ttl"
+	"github.com/xuning888/godis-tiny/interface/database"
+	"github.com/xuning888/godis-tiny/interface/redis"
+	"github.com/xuning888/godis-tiny/pkg/logger"
+	"github.com/xuning888/godis-tiny/redis/protocol"
 	"math/rand"
 	"strings"
 	"sync"
