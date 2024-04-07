@@ -123,14 +123,14 @@ func (r *RedisServer) Shutdown(ctx context.Context) (err error) {
 		return
 	}
 
-	// stop network engine
-	if err = r.engine.Stop(ctx); err != nil {
-		r.lg.Sugar().Errorf("stop network engine failed with error: %v", err)
-	}
-
 	// stop redis engine
 	if err = r.dbEngine.Shutdown(ctx); err != nil {
 		r.lg.Sugar().Errorf("stop dbEngine failed with error: %v", err)
+	}
+
+	// stop network engine
+	if err = r.engine.Stop(ctx); err != nil {
+		r.lg.Sugar().Errorf("stop network engine failed with error: %v", err)
 	}
 
 	// stop write res to peer

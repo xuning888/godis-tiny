@@ -90,14 +90,13 @@ func (s *Standalone) ForEach(dbIndex int, cb func(key string, entity *database.D
 var multi = runtime.NumCPU()
 
 func MakeStandalone() *Standalone {
+	server := &Standalone{}
 	ctx, cancelFunc := context.WithCancel(context.Background())
-	server := &Standalone{
-		shutdown: new(atomic2.Boolean),
-		resQueue: make(chan *database.CmdRes, multi),
-		reqQueue: make(chan *database.CmdReq, multi),
-	}
 	server.ctx = ctx
 	server.cancel = cancelFunc
+	server.shutdown = new(atomic2.Boolean)
+	server.resQueue = make(chan *database.CmdRes, multi)
+	server.reqQueue = make(chan *database.CmdReq, multi)
 	lg, err := logger.CreateLogger(logger.DefaultLevel)
 	if err != nil {
 		panic(err)
@@ -263,7 +262,7 @@ func (s *Standalone) Shutdown(cancelCtx context.Context) (err error) {
 	s.resWait.Wait()
 	s.cancel()
 	if config.Properties.AppendOnly {
-		return s.aof.Shutdown(cancelCtx)
+		err = s.aof.Shutdown(cancelCtx)
 	}
 	return
 }
@@ -291,7 +290,7 @@ func (s *Standalone) startCmdConsumer() {
 					s.resQueue <- res
 				}
 				s.resWait.Add(1)
-				devl(cmdRes)
+				go devl(cmdRes)
 			}
 		}
 	}()

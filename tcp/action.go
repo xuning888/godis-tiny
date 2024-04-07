@@ -85,7 +85,11 @@ func (r *RedisServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 			cmdReq := database2.MakeCmdReq(conn, cmd.Args)
 			err2 := r.dbEngine.PushReqEvent(cmdReq)
 			if err2 != nil {
-				return gnet.Close
+				err3 := r.quickWrite(c, protocol.MakeStandardErrReply("ERR Server is shutting down").ToBytes())
+				if err3 != nil {
+					r.lg.Sugar().Errorf("err3: %v", err3)
+				}
+				return gnet.None
 			}
 		}
 		if errors.Is(err, parser.ErrIncompletePacket) {
@@ -104,7 +108,11 @@ func (r *RedisServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		cmdReq := database2.MakeCmdReq(conn, cmd.Args)
 		err2 := r.dbEngine.PushReqEvent(cmdReq)
 		if err2 != nil {
-			return gnet.Close
+			err3 := r.quickWrite(c, protocol.MakeStandardErrReply("ERR Server is shutting down").ToBytes())
+			if err3 != nil {
+				r.lg.Sugar().Errorf("err3: %v", err3)
+			}
+			return gnet.None
 		}
 	}
 	return

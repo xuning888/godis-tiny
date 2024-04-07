@@ -56,10 +56,7 @@ func (c *CommandContext) GetArgs() [][]byte {
 }
 
 func (c *CommandContext) GetArgNum() int {
-	if c.args == nil {
-		c.args = c.cmdLine[1:]
-	}
-	return len(c.args)
+	return len(c.GetArgs())
 }
 
 func (c *CommandContext) GetCmdLine() [][]byte {
