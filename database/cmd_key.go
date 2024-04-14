@@ -40,13 +40,19 @@ func execKeys(c context.Context, ctx *CommandContext) redis.Reply {
 	}
 	args := ctx.GetArgs()
 	pattern := string(args[0])
+	_, err := path.Match(pattern, "")
+	if err != nil {
+		return protocol.MakeStandardErrReply("ERR invalid pattern")
+	}
 	keys := ctx.GetDb().data.Keys()
 	var matchedKeys [][]byte
+	if pattern == "*" {
+		matchedKeys = make([][]byte, 0, len(keys))
+	} else {
+		matchedKeys = make([][]byte, 0)
+	}
 	for _, key := range keys {
-		matched, err := path.Match(pattern, key)
-		if err != nil {
-			return protocol.MakeStandardErrReply("ERR invalid pattern")
-		}
+		matched, _ := path.Match(pattern, key)
 		if matched {
 			matchedKeys = append(matchedKeys, []byte(key))
 		}
@@ -67,9 +73,6 @@ func execExists(c context.Context, ctx *CommandContext) redis.Reply {
 	args := ctx.GetArgs()
 	for i := 0; i < argNum; i++ {
 		keys[i] = string(args[i])
-	}
-	if len(keys) == 0 {
-		return protocol.MakeIntReply(0)
 	}
 	result := ctx.GetDb().Exists(keys)
 	return protocol.MakeIntReply(result)
@@ -165,7 +168,7 @@ func execExpire(c context.Context, ctx *CommandContext) redis.Reply {
 // execPersist persist key 移除key的过期时间
 func execPersist(c context.Context, ctx *CommandContext) redis.Reply {
 	argNum := ctx.GetArgNum()
-	if argNum < 2 || argNum > 2 {
+	if argNum < 1 || argNum > 1 {
 		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
 	cmdData := ctx.GetArgs()

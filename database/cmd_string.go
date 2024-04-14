@@ -55,12 +55,15 @@ const (
 )
 
 // 过期时间
-const unlimitedTTL int64 = 0
+const (
+	unlimitedTTL int64 = -1
+	keepTTL      int64 = 0
+)
 
-// execSet set key value [NX|XX] [EX seconds | PS milliseconds]
+// execSet set key value [NX|XX] [EX seconds | PS milliseconds | keepttl]
 func execSet(c context.Context, ctx *CommandContext) redis.Reply {
 	argNum := ctx.GetArgNum()
-	if argNum < 2 || argNum > 4 {
+	if argNum < 2 {
 		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
 	}
 	args := ctx.GetArgs()
@@ -90,7 +93,7 @@ func execSet(c context.Context, ctx *CommandContext) redis.Reply {
 				if ttl != unlimitedTTL {
 					return protocol.MakeSyntaxReply()
 				}
-				if i+1 > len(args) {
+				if i+1 >= len(args) {
 					return protocol.MakeSyntaxReply()
 				}
 				ttlArg, err := strconv.ParseInt(string(args[i+1]), 10, 64)
@@ -107,7 +110,7 @@ func execSet(c context.Context, ctx *CommandContext) redis.Reply {
 				if ttl != unlimitedTTL {
 					return protocol.MakeSyntaxReply()
 				}
-				if i+1 > len(args) {
+				if i+1 >= len(args) {
 					return protocol.MakeSyntaxReply()
 				}
 				ttlArg, err := strconv.ParseInt(string(args[i+1]), 10, 64)
@@ -119,17 +122,28 @@ func execSet(c context.Context, ctx *CommandContext) redis.Reply {
 				}
 				ttl = ttlArg
 				i++
+			} else if "KEEPTTL" == upper {
+				if ttl != unlimitedTTL {
+					return protocol.MakeSyntaxReply()
+				}
+				ttl = keepTTL
 			} else {
 				return protocol.MakeSyntaxReply()
 			}
 		}
 	}
-	entity := &database.DataEntity{
-		Type: database.String,
-		Data: value,
+	db := ctx.GetDb()
+	entity, exists := db.GetEntity(key)
+	if exists {
+		entity.Type = database.String
+		entity.Data = value
+	} else {
+		entity = &database.DataEntity{
+			Type: database.String,
+			Data: value,
+		}
 	}
 	var result int
-	db := ctx.GetDb()
 	switch policy {
 	case addOrUpdatePolicy:
 		db.PutEntity(key, entity)
@@ -141,12 +155,16 @@ func execSet(c context.Context, ctx *CommandContext) redis.Reply {
 	}
 	if result > 0 {
 		if ttl != unlimitedTTL {
-			expireTime := time.Now().Add(time.Duration(ttl) * time.Millisecond)
-			db.ExpireV1(key, expireTime)
-			db.addAof(ctx.GetCmdLine())
-			// convert to expireat
-			expireAtCmd := util.MakeExpireCmd(key, expireTime)
-			db.addAof(expireAtCmd)
+			if ttl == keepTTL {
+				db.addAof(ctx.GetCmdLine())
+			} else {
+				expireTime := time.Now().Add(time.Duration(ttl) * time.Millisecond)
+				db.ExpireV1(key, expireTime)
+				db.addAof(ctx.GetCmdLine())
+				// convert to expireat
+				expireAtCmd := util.MakeExpireCmd(key, expireTime)
+				db.addAof(expireAtCmd)
+			}
 		} else {
 			db.RemoveTTLV1(key)
 			db.addAof(ctx.GetCmdLine())
@@ -361,10 +379,16 @@ func execMSet(c context.Context, ctx *CommandContext) redis.Reply {
 	for i := 1; i < argNum; i += 2 {
 		key := string(args[i-1])
 		value := args[i]
-		ctx.GetDb().PutEntity(key, &database.DataEntity{
-			Type: database.String,
-			Data: value,
-		})
+		entity, exists := ctx.GetDb().GetEntity(key)
+		if exists {
+			entity.Type = database.String
+			entity.Data = value
+		} else {
+			ctx.GetDb().PutEntity(key, &database.DataEntity{
+				Type: database.String,
+				Data: value,
+			})
+		}
 	}
 	ctx.GetDb().addAof(ctx.GetCmdLine())
 	return protocol.MakeOkReply()

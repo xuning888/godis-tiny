@@ -15,10 +15,10 @@ import (
 )
 
 func (r *RedisServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
-	r.lg.Sugar().Info("on boot callback....")
 	r.engine = eng
 	r.dbEngine.Init()
 	r.listen()
+	r.lg.Sugar().Info("Ready to accept connections tcp")
 	return
 }
 
@@ -32,7 +32,7 @@ func (r *RedisServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 			connectedClients, maxClients)
 		return protocol.MakeStandardErrReply("ERR max number of clients reached").ToBytes(), gnet.Close
 	}
-	r.lg.Sugar().Infof("accept conn: %v", c.RemoteAddr())
+	r.lg.Sugar().Debugf("accept conn: %v", c.RemoteAddr())
 	codec := parser.NewCodec()
 	c.SetContext(codec)
 	r.connManager.RegisterConn(c.RemoteAddr().String(), connection.NewConn(c, false))
@@ -43,12 +43,12 @@ func (r *RedisServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	remoteAddr := c.RemoteAddr()
 	if err != nil {
 		if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			r.lg.Sugar().Infof("conn: %v, closed", remoteAddr)
+			r.lg.Sugar().Debugf("conn: %v, closed", remoteAddr)
 		} else {
 			r.lg.Sugar().Errorf("conn: %v closed, error: %v", remoteAddr, err)
 		}
 	} else {
-		r.lg.Sugar().Infof("conn: %v, closed", remoteAddr)
+		r.lg.Sugar().Debugf("conn: %v, closed", remoteAddr)
 	}
 	r.connManager.RemoveConnByKey(c.RemoteAddr().String())
 	return
@@ -148,6 +148,7 @@ func (r *RedisServer) listen() {
 }
 
 func (r *RedisServer) asyncWrite(c gnet.Conn, bytes []byte) {
+	r.writeWg.Add(1)
 	err := c.AsyncWrite(bytes, r.callback)
 	if err != nil {
 		r.lg.Sugar().Errorf("Async write failed with error: %v", err)
@@ -155,6 +156,7 @@ func (r *RedisServer) asyncWrite(c gnet.Conn, bytes []byte) {
 }
 
 func (r *RedisServer) callback(c gnet.Conn, err error) error {
+	r.writeWg.Done()
 	if err != nil {
 		if errors.Is(err, net.ErrClosed) {
 			r.lg.Sugar().Errorf("Async write failed. conn has closed, err: %v", err)

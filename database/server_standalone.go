@@ -253,9 +253,9 @@ func (s *Standalone) bindPersister(aof *persistence.Aof) {
 // Shutdown 先处理AOF的落盘, 保证已经执行过的指令不丢。
 // 随后拒绝未进入队列的的请求
 func (s *Standalone) Shutdown(cancelCtx context.Context) (err error) {
-	s.lg.Sugar().Info("shutdown dbEngine...")
 	// 拒绝新的请求
 	s.shutdown.Set(true)
+	s.lg.Sugar().Info("User requested shutdown...")
 	// 等待已经接收的请求执行
 	s.reqWait.Wait()
 	// 等待执行完的请求返回数据

@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 	"os"
 	"os/signal"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -34,6 +35,7 @@ const (
 )
 
 type RedisServer struct {
+	writeWg sync.WaitGroup
 	gnet.BuiltinEventEngine
 	status       uint32
 	engine       gnet.Engine
@@ -55,7 +57,7 @@ func waitSignal(errCh chan error) error {
 			// force shutdown
 			return errors.New(sig.String())
 		case syscall.SIGHUP, syscall.SIGINT:
-			return nil
+			return errors.New(sig.String())
 		}
 	case err := <-errCh:
 		// network engine error
@@ -98,10 +100,8 @@ func (r *RedisServer) Spin() {
 		signalWaiter = r.signalWaiter
 	}
 
-	r.lg.Sugar().Infof("bind: %s starting....", address)
-
 	if err := signalWaiter(errCh); err != nil {
-		r.lg.Sugar().Errorf("Receive close signal: error=%v", err)
+		logger.Infof("Received SIGINT %s scheduling shutdown...", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -128,13 +128,18 @@ func (r *RedisServer) Shutdown(ctx context.Context) (err error) {
 		r.lg.Sugar().Errorf("stop dbEngine failed with error: %v", err)
 	}
 
+	// wait network engine async write to peer
+	r.writeWg.Wait()
+
+	// stop write res to peer
+	close(r.stopChan)
+
 	// stop network engine
 	if err = r.engine.Stop(ctx); err != nil {
 		r.lg.Sugar().Errorf("stop network engine failed with error: %v", err)
 	}
 
-	// stop write res to peer
-	close(r.stopChan)
+	r.lg.Sugar().Info("Redis is now ready to exit, bye bye...")
 
 	atomic.StoreUint32(&r.status, statusClosed)
 	return

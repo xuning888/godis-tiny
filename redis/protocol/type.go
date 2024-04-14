@@ -36,16 +36,16 @@ func MakeSimpleReply(arg []byte) *SimpleReply {
 
 // IntReply 整数
 type IntReply struct {
-	num int64
+	Num int64
 }
 
 func (r *IntReply) ToBytes() []byte {
-	return []byte(fmt.Sprintf(":%d%s", r.num, CRLF))
+	return []byte(fmt.Sprintf(":%d%s", r.Num, CRLF))
 }
 
 func MakeIntReply(num int64) *IntReply {
 	return &IntReply{
-		num: num,
+		Num: num,
 	}
 }
 

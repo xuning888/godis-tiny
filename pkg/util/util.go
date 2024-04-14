@@ -18,24 +18,20 @@ func MinInt64(a, b int64) int64 {
 }
 
 func ToCmdLine(key string, args ...string) database.CmdLine {
-	cmdLine := make([][]byte, 0)
+	var capp = 1 + len(args)
+	cmdLine := make([][]byte, 0, capp)
 	cmdLine = append(cmdLine, []byte(key))
-	if args != nil && len(args) > 0 {
-		for _, arg := range args {
-			cmdLine = append(cmdLine, []byte(arg))
-		}
+	for _, arg := range args {
+		cmdLine = append(cmdLine, []byte(arg))
 	}
 	return cmdLine
 }
 
 func ToCmdLine2(key string, args [][]byte) database.CmdLine {
-	cmdLine := make([][]byte, 0)
+	var capp = 1 + len(args)
+	cmdLine := make([][]byte, 0, capp)
 	cmdLine = append(cmdLine, []byte(key))
-	if args != nil && len(args) > 0 {
-		for _, arg := range args {
-			cmdLine = append(cmdLine, arg)
-		}
-	}
+	cmdLine = append(cmdLine, args...)
 	return cmdLine
 }
 

@@ -34,6 +34,17 @@ type ServerProperties struct {
 
 var Properties = &ServerProperties{}
 
+func init() {
+	Properties = &ServerProperties{
+		Bind:           "0.0.0.0",
+		Port:           6389,
+		AppendOnly:     false,
+		AppendFilename: "",
+		Databases:      16,
+		RunID:          util.RandStr(40),
+	}
+}
+
 func parse(src io.Reader) *ServerProperties {
 	config := &ServerProperties{}
 
@@ -122,6 +133,10 @@ func SetUpConfig(filename string) {
 	// convert to byte
 	rewriteMinSize := Properties.AofRewriteMinSize * 1024 * 1024
 	Properties.AofRewriteMinSize = rewriteMinSize
+
+	if Properties.Databases == 0 {
+		Properties.Databases = 16
+	}
 }
 
 func TmpDir() string {

@@ -27,9 +27,9 @@ func fileExists(filename string) bool {
 func setupConfiguration(configPath string) {
 	if fileExists(configPath) {
 		config.SetUpConfig(configPath)
-		fmt.Printf("Loaded configuration from %s\n", configPath)
+		logger.Infof("Loaded configuration from %s", configPath)
 	} else {
-		fmt.Printf("Config file '%s' not found. Using default settings.\n", configPath)
+		logger.Infof("Config file '%s' not found. Using default settings.", configPath)
 		config.Properties = defaultConfig
 	}
 }
@@ -42,6 +42,10 @@ Usage: ./` + serverName + ` [/path/to/redis.conf] [options] [-]
 }
 
 func main() {
+	_, err := logger.SetUpLoggerv2(logger.DefaultLevel)
+	if err != nil {
+		panic(err)
+	}
 	args := os.Args[1:]
 	if len(args) > 0 {
 		for _, arg := range args {
@@ -55,10 +59,6 @@ func main() {
 		}
 	} else {
 		setupConfiguration("redis.conf")
-	}
-	_, err := logger.SetUpLoggerv2(logger.DefaultLevel)
-	if err != nil {
-		panic(err)
 	}
 	server := tcp.NewRedisServer()
 	server.Spin()

@@ -95,8 +95,6 @@ type Aof struct {
 	aofFsync string
 	// aofFile
 	fileBuffer *FileBuffer
-	// aofFinished
-	aofFinished chan struct{}
 	// currentDb 后续命令操作的db
 	currentDb int
 	// listeners
@@ -184,18 +182,17 @@ func (a *Aof) LoadAof(maxBytes int) {
 	defer a.lg.Sync()
 
 	file, err := os.Open(a.aofFilename)
-	defer file.Close()
 	if err != nil {
 		a.lg.Sugar().Errorf("load aof failed with error: %v", err)
 		return
 	}
+	defer file.Close()
 	var reader io.Reader
 	if maxBytes > 0 {
 		reader = io.LimitReader(file, int64(maxBytes))
 	} else {
 		reader = file
 	}
-	cnt := 0
 	ch := parser.DecodeInStream(reader)
 	conn := connection.NewConn(nil, true)
 	for p := range ch {
@@ -215,23 +212,21 @@ func (a *Aof) LoadAof(maxBytes int) {
 			a.lg.Sugar().Error("require multi bulk protocol")
 			continue
 		}
-		cnt++
 		cmdRes := a.db.Exec(database.MakeCmdReq(conn, reply.Args))
 		resReply := cmdRes.GetReply()
 		if protocol.IsErrorReply(resReply) {
 			a.lg.Sugar().Warnf("load aof falied with error: %s", resReply.ToBytes())
 		}
 		if strings.ToLower(string(reply.Args[0])) == "select" {
-			dbIndex, err := strconv.Atoi(string(reply.Args[1]))
-			if err != nil {
-				logger.Errorf("")
+			dbIndex, err2 := strconv.Atoi(string(reply.Args[1]))
+			if err2 != nil {
+				a.lg.Sugar().Error(err2)
 			}
 			a.currentDb = dbIndex
 		}
 	}
 	stat, _ := os.Stat(a.aofFilename)
 	a.lastRewriteAofSize = stat.Size()
-	a.lg.Sugar().Infof("load aof complete, cnt: %v", cnt)
 }
 
 func (a *Aof) fsyncEverySecond() {
@@ -277,19 +272,16 @@ func (a *Aof) Shutdown(ctx context.Context) (err error) {
 	a.lg.Sugar().Infof("shutdown aof begin...")
 	ticker := time.NewTicker(time.Millisecond * 10)
 	defer ticker.Stop()
-	// 尝试把文件数据都落盘
-	err = a.fileBuffer.Sync()
-	if err != nil {
-		return
-	}
 	for {
-		var buffered int
-		if buffered = a.fileBuffer.Buffered(); buffered == 0 {
-			break
-		}
+		// 尝试把文件数据都落盘
+		a.lg.Sugar().Info("Calling fsync() on the Aof file.")
 		err = a.fileBuffer.Sync()
 		if err != nil {
 			return
+		}
+		var buffered int
+		if buffered = a.fileBuffer.Buffered(); buffered == 0 {
+			break
 		}
 		a.lg.Sugar().Infof("Shutdown aof buffered: %v", buffered)
 		select {
@@ -319,8 +311,6 @@ func NewAof(db database.DBEngine, filename string, fsync string, tempDbMaker fun
 		return nil, err
 	}
 	persister.fileBuffer = NewFileBuffer(aofFile, aofBufferSize)
-
-	persister.aofFinished = make(chan struct{})
 	persister.listeners = make(map[Listener]struct{})
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-var DefaultLevel = zapcore.DebugLevel
+var DefaultLevel = zapcore.InfoLevel
 
 var logger *zap.Logger = nil
 
