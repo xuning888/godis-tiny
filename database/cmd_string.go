@@ -43,7 +43,7 @@ func execGet(c context.Context, ctx *CommandContext) redis.Reply {
 		return err
 	}
 	if bytes == nil {
-		return &protocol.NullBulkReply{}
+		return protocol.MakeNullBulkReply()
 	}
 	return protocol.MakeBulkReply(bytes)
 }
@@ -280,27 +280,31 @@ func execDecr(c context.Context, ctx *CommandContext) redis.Reply {
 	}
 	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
-	valueBytes, reply := ctx.GetDb().getAsString(key)
-	if reply != nil {
-		return reply
-	} else if valueBytes == nil {
+	entity, exists := ctx.GetDb().GetEntity(key)
+	if !exists {
 		ctx.GetDb().PutEntity(key, &database.DataEntity{Data: []byte("-1"), Type: database.String})
 		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(-1)
-	} else {
-		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
-		if err != nil {
-			return protocol.MakeOutOfRangeOrNotInt()
-		}
-		if math.MinInt64+1 > value {
-			return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
-		}
-		value--
-		valueStr := strconv.FormatInt(value, 10)
-		ctx.GetDb().PutEntity(key, &database.DataEntity{Data: []byte(valueStr), Type: database.String})
-		ctx.GetDb().addAof(ctx.GetCmdLine())
-		return protocol.MakeIntReply(value)
 	}
+	if entity.Type != database.String {
+		return protocol.MakeWrongTypeErrReply()
+	}
+	valueBytes, ok := entity.Data.([]byte)
+	if !ok {
+		return protocol.MakeWrongTypeErrReply()
+	}
+	value, err := strconv.ParseInt(string(valueBytes), 10, 64)
+	if err != nil {
+		return protocol.MakeOutOfRangeOrNotInt()
+	}
+	if math.MinInt64+1 > value {
+		return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
+	}
+	value--
+	valueStr := strconv.FormatInt(value, 10)
+	entity.Data = []byte(valueStr)
+	ctx.GetDb().addAof(ctx.GetCmdLine())
+	return protocol.MakeIntReply(value)
 }
 
 // execGetRange getrange key start end
@@ -395,7 +399,6 @@ func execMSet(c context.Context, ctx *CommandContext) redis.Reply {
 }
 
 // execGetDel getdel
-// todo if the key dose not exist of if the key's value type is not a string
 func execGetDel(c context.Context, ctx *CommandContext) redis.Reply {
 	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
@@ -403,16 +406,20 @@ func execGetDel(c context.Context, ctx *CommandContext) redis.Reply {
 	}
 	cmdData := ctx.GetArgs()
 	key := string(cmdData[0])
-	valueBytes, reply := ctx.GetDb().getAsString(key)
-	if reply != nil {
-		return reply
-	} else if valueBytes == nil {
+	entity, exists := ctx.GetDb().GetEntity(key)
+	if !exists {
 		return protocol.MakeNullBulkReply()
-	} else {
-		ctx.GetDb().Remove(key)
-		ctx.GetDb().addAof(ctx.GetCmdLine())
-		return protocol.MakeBulkReply(valueBytes)
 	}
+	if entity.Type != database.String {
+		return protocol.MakeNullBulkReply()
+	}
+	ctx.GetDb().Remove(key)
+	ctx.GetDb().addAof(ctx.GetCmdLine())
+	valueBytes, ok := entity.Data.([]byte)
+	if !ok {
+		return protocol.MakeWrongTypeErrReply()
+	}
+	return protocol.MakeBulkReply(valueBytes)
 }
 
 // execIncrBy incrby key increment
@@ -427,33 +434,36 @@ func execIncrBy(c context.Context, ctx *CommandContext) redis.Reply {
 	if err != nil {
 		return protocol.MakeOutOfRangeOrNotInt()
 	}
-	valueBytes, reply := ctx.GetDb().getAsString(key)
-	if reply != nil {
-		return reply
-	} else if valueBytes == nil {
+	entity, exists := ctx.GetDb().GetEntity(key)
+	if !exists {
 		ctx.GetDb().PutEntity(key, &database.DataEntity{
 			Type: database.String,
 			Data: []byte(strconv.FormatInt(increment, 10)),
 		})
 		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(increment)
-	} else {
-		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
-		if err != nil {
-			return protocol.MakeOutOfRangeOrNotInt()
-		}
-		if (increment > 0 && math.MaxInt64-increment < value) ||
-			(increment < 0 && math.MinInt64-increment > value) {
-			return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
-		}
-		value += increment
-		ctx.GetDb().PutEntity(key, &database.DataEntity{
-			Type: database.String,
-			Data: []byte(strconv.FormatInt(value, 10)),
-		})
-		ctx.GetDb().addAof(ctx.GetCmdLine())
-		return protocol.MakeIntReply(value)
 	}
+
+	if entity.Type != database.String {
+		return protocol.MakeWrongTypeErrReply()
+	}
+
+	valueBytes, ok := entity.Data.([]byte)
+	if !ok {
+		return protocol.MakeWrongTypeErrReply()
+	}
+	value, err := strconv.ParseInt(string(valueBytes), 10, 64)
+	if err != nil {
+		return protocol.MakeOutOfRangeOrNotInt()
+	}
+	if (increment > 0 && math.MaxInt64-increment < value) ||
+		(increment < 0 && math.MinInt64-increment > value) {
+		return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
+	}
+	value += increment
+	entity.Data = []byte(strconv.FormatInt(value, 10))
+	ctx.GetDb().addAof(ctx.GetCmdLine())
+	return protocol.MakeIntReply(value)
 }
 
 func execDecrBy(c context.Context, ctx *CommandContext) redis.Reply {
@@ -470,10 +480,8 @@ func execDecrBy(c context.Context, ctx *CommandContext) redis.Reply {
 	if decrement == math.MinInt64 {
 		return protocol.MakeStandardErrReply("ERR decrement would overflow")
 	}
-	valueBytes, reply := ctx.GetDb().getAsString(key)
-	if reply != nil {
-		return reply
-	} else if valueBytes == nil {
+	entity, exists := ctx.GetDb().GetEntity(key)
+	if !exists {
 		value := 0 - decrement
 		ctx.GetDb().PutEntity(key, &database.DataEntity{
 			Type: database.String,
@@ -481,23 +489,29 @@ func execDecrBy(c context.Context, ctx *CommandContext) redis.Reply {
 		})
 		ctx.GetDb().addAof(ctx.GetCmdLine())
 		return protocol.MakeIntReply(value)
-	} else {
-		value, err := strconv.ParseInt(string(valueBytes), 10, 64)
-		if err != nil {
-			return protocol.MakeOutOfRangeOrNotInt()
-		}
-		if (decrement > 0 && math.MinInt64+decrement > value) ||
-			(decrement < 0 && (math.MaxInt64+decrement < value)) {
-			return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
-		}
-		value -= decrement
-		ctx.GetDb().PutEntity(key, &database.DataEntity{
-			Type: database.String,
-			Data: []byte(strconv.FormatInt(value, 10)),
-		})
-		ctx.GetDb().addAof(ctx.GetCmdLine())
-		return protocol.MakeIntReply(value)
 	}
+
+	if entity.Type != database.String {
+		return protocol.MakeWrongTypeErrReply()
+	}
+
+	valueBytes, ok := entity.Data.([]byte)
+	if !ok {
+		return protocol.MakeWrongTypeErrReply()
+	}
+
+	value, err := strconv.ParseInt(string(valueBytes), 10, 64)
+	if err != nil {
+		return protocol.MakeOutOfRangeOrNotInt()
+	}
+	if (decrement > 0 && math.MinInt64+decrement > value) ||
+		(decrement < 0 && (math.MaxInt64+decrement < value)) {
+		return protocol.MakeStandardErrReply("ERR increment or decrement would overflow")
+	}
+	value -= decrement
+	entity.Data = []byte(strconv.FormatInt(value, 10))
+	ctx.GetDb().addAof(ctx.GetCmdLine())
+	return protocol.MakeIntReply(value)
 }
 
 func registerStringCmd() {
