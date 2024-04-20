@@ -103,5 +103,6 @@ func (s *SimpleDict) RandomDistinctKeys(limit int) []string {
 }
 
 func (s *SimpleDict) Clear() {
+	s.m = nil // help gc
 	s.m = make(map[string]interface{})
 }

@@ -15,3 +15,8 @@
 * redis 的5种基本的数据结构
 * rdb
 * redis主从模式
+
+# 支持的操作系统
+* linux
+* macos
+* windows(由于gnet欠缺对windows的完整支持, 无法呈现良好的性能表现)

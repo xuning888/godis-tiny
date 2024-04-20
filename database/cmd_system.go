@@ -8,6 +8,7 @@ import (
 	"github.com/xuning888/godis-tiny/redis/connection"
 	"github.com/xuning888/godis-tiny/redis/protocol"
 	"log"
+	"runtime"
 	"strings"
 )
 
@@ -15,6 +16,15 @@ const (
 	flushAsync = iota
 	flushSync
 )
+
+// gc
+// Note 并不一定能够百分之百的触发gc, 仅用于测试
+func gc(c context.Context, ctx *CommandContext) redis.Reply {
+	go func() {
+		runtime.GC()
+	}()
+	return protocol.MakeOkReply()
+}
 
 func flushDb(c context.Context, ctx *CommandContext) redis.Reply {
 	argNum := ctx.GetArgNum()
@@ -36,14 +46,10 @@ func flushDb(c context.Context, ctx *CommandContext) redis.Reply {
 	}
 	db := ctx.GetDb()
 	cmdLine := ctx.GetCmdLine()
-	if policy == flushSync {
+	// 这里不管是sync 还是 async 都走同一个逻辑, 因为有gc, 开一个协程没有啥意义
+	if policy == flushSync || policy == flushAsync {
 		db.Flush()
 		db.addAof(cmdLine)
-	} else {
-		go func() {
-			db.Flush()
-			db.addAof(cmdLine)
-		}()
 	}
 	return protocol.MakeOkReply()
 }
@@ -158,4 +164,5 @@ func registerSystemCmd() {
 	cmdManager.registerCmd("info", execInfo, readOnly)
 	cmdManager.registerCmd("type", execType, readOnly)
 	cmdManager.registerCmd("bgrewriteaof", execRewriteAof, readOnly)
+	cmdManager.registerCmd("gc", gc, writeOnly)
 }
