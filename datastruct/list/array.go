@@ -20,7 +20,7 @@ var (
 )
 
 // ArrayDeque 使用切片实现的循环队列，极限容量时 2 ^ 30
-// 这玩意由于数组的扩容, 导致性能太差了
+// todo 这玩意由于数组的扩容, 导致性能太差了, 后期抽时间优化一下
 type ArrayDeque struct {
 	head     int
 	tail     int
