@@ -1,22 +1,25 @@
-# 简介
-发现了一个[大佬](https://github.com/HDT3213)使用golang语言实现一个redis服务器的项目[godis](https://github.com/HDT3213/godis)。
-对这个项目非常感兴趣，所以就学习一下。
+# Godis - Redis Server Implementation in Go
 
-在此记录一下学习记录 
+[中文](./README_ZH.md)
+## Introduction
+This project is a learning exercise inspired by [HDT3213's godis](https://github.com/HDT3213/godis). The goal is to gain a deeper understanding of the inner workings of a Redis server and Go programming by examining and implementing parts of the godis codebase. This is primarily a study project for educational purposes.
 
-# 已经实现的部分
-* redis的部分命令
-* 把 [godis](https://github.com/HDT3213/godis) 中的命令处理方式改成了单协程消费,这样我就不用太多的关注内部数据结构的线程安全和锁实现
-* 把 [godis](https://github.com/HDT3213/godis) 中ttl的实现方式由时钟轮改成了按照过期时间排序的优先队列，采用定时清理和主动随机清理结合的方式来处理过期key
-* 使用[gnet](https://github.com/panjf2000/gnet)作为的网络库
-* aof & aofRewrite
+## Current Features
+- Implementation of several Redis commands
+- Modified command handling to single-threaded consumption, simplifying thread safety and locking mechanisms
+- TTL mechanism shifted from a time-wheel to a priority queue sorted by expiration time, combining scheduled and random cleanup for expired keys
+- Network handling using [gnet](https://github.com/panjf2000/gnet)
+- Support for AOF (Append Only File) and AOF Rewrite
 
-# 即将学习和实现的部分
-* redis 的5种基本的数据结构
-* rdb
-* redis主从模式
+## Planned Features
+- Implementation of the five basic Redis data structures
+- Support for RDB (Redis Database File) persistence
+- Exploration and implementation of Redis master-slave replication
 
-# 支持的操作系统
-* linux
-* macos
-* windows(由于gnet欠缺对windows的完整支持, 无法呈现良好的性能表现)
+## Supported Operating Systems
+- Linux
+- macOS
+- Windows (Performance may be limited due to partial gnet support)
+
+## Note
+This project is derived from my study of [HDT3213's godis](https://github.com/HDT3213/godis). It is intended for learning and educational purposes. Contributions and feedback are welcome, but please note this is a personal study project and may not be suitable for production use.
