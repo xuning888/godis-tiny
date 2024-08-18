@@ -13,13 +13,14 @@ import (
 	"github.com/xuning888/godis-tiny/redis/connection"
 	"github.com/xuning888/godis-tiny/redis/protocol"
 	"go.uber.org/zap"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 var _ database.DBEngine = &Standalone{}
+
+var lock = sync.Mutex{}
 
 // Standalone 单机存储的存储引擎
 type Standalone struct {
@@ -30,15 +31,12 @@ type Standalone struct {
 	cancel   func()
 	dbSet    []*atomic.Value
 	aof      *persistence.Aof
-	reqQueue chan *database.CmdReq
-	resQueue chan *database.CmdRes
 	lg       *zap.Logger
 }
 
 func (s *Standalone) Cron() {
 	cmdReq := database.MakeCmdReq(connection.SystemCon, util.ToCmdLine("ttlops"))
-	s.PushReqEvent(cmdReq)
-
+	s.Exec(cmdReq)
 	// 触发aof重写
 	s.aofRewrite()
 }
@@ -87,16 +85,12 @@ func (s *Standalone) ForEach(dbIndex int, cb func(key string, entity *database.D
 	}
 }
 
-var multi = runtime.NumCPU()
-
 func MakeStandalone() *Standalone {
 	server := &Standalone{}
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	server.ctx = ctx
 	server.cancel = cancelFunc
 	server.shutdown = new(atomic2.Boolean)
-	server.resQueue = make(chan *database.CmdRes, multi)
-	server.reqQueue = make(chan *database.CmdReq, multi)
 	lg, err := logger.CreateLogger(logger.DefaultLevel)
 	if err != nil {
 		panic(err)
@@ -150,38 +144,10 @@ func (s *Standalone) Rewrite() error {
 	return s.aof.Rewrite()
 }
 
-var ErrorsShutdown = errors.New("shutdown")
-
-func (s *Standalone) PushReqEvent(req *database.CmdReq) error {
-	if s.shutdown.Get() {
-		return ErrorsShutdown
-	}
-	s.reqWait.Add(1)
-	go func() {
-		defer s.reqWait.Done()
-		reqq := req
-		select {
-		case <-s.ctx.Done():
-			s.lg.Sugar().Errorf("push aborted: Standalone is shutting down")
-			return
-		case s.reqQueue <- reqq:
-			return
-		}
-	}()
-	return nil
-}
-
-func (s *Standalone) DeliverResEvent() <-chan *database.CmdRes {
-	return s.resQueue
-}
-
 // Exec 这是一个无锁实现, 用于AofLoad
 func (s *Standalone) Exec(req *database.CmdReq) *database.CmdRes {
-	return s.doExec(req)
-}
-
-// doExec 调用db执行命令，将结果放到 resQueue 中
-func (s *Standalone) doExec(req *database.CmdReq) *database.CmdRes {
+	lock.Lock()
+	defer lock.Unlock()
 	// 执行命令
 	client := req.GetConn()
 	index := client.GetIndex()
@@ -234,8 +200,6 @@ func (s *Standalone) Init() {
 	if config.Properties.AppendOnly {
 		s.aof.LoadAof(0)
 	}
-	// 开启一个协程来消费req队列
-	s.startCmdConsumer()
 }
 
 func (s *Standalone) bindPersister(aof *persistence.Aof) {
@@ -265,33 +229,4 @@ func (s *Standalone) Shutdown(cancelCtx context.Context) (err error) {
 		err = s.aof.Shutdown(cancelCtx)
 	}
 	return
-}
-
-// startCmdConsumer 开启一个协程消费指令
-func (s *Standalone) startCmdConsumer() {
-	go func() {
-		for {
-			select {
-			case <-s.ctx.Done():
-				s.lg.Info("receive cmdRequeue closed")
-				return
-			case cmdReq, ok := <-s.reqQueue:
-				if !ok {
-					s.lg.Info("cmdReqQueue is closed")
-					return
-				}
-				cmdRes := s.doExec(cmdReq)
-				if cmdRes == nil || cmdRes.GetConn().IsInner() {
-					continue
-				}
-
-				devl := func(res *database.CmdRes) {
-					defer s.resWait.Done()
-					s.resQueue <- res
-				}
-				s.resWait.Add(1)
-				go devl(cmdRes)
-			}
-		}
-	}()
 }

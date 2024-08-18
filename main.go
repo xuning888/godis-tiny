@@ -35,9 +35,9 @@ func setupConfiguration(configPath string) {
 }
 
 func printHelp() {
-	helpText := `
-Usage: ./` + serverName + ` [/path/to/redis.conf] [options] [-]
-       ./` + serverName + ` -h or --help`
+	helpText := `Usage: ./` + serverName + ` [/path/to/redis.conf] [options] [-]
+       ./` + serverName + ` -h or --help
+`
 	fmt.Print(helpText)
 }
 

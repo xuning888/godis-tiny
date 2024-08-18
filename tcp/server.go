@@ -81,14 +81,13 @@ func (r *RedisServer) Spin() {
 	go func() {
 		errCh <- gnet.Run(
 			r, address,
-			gnet.WithReadBufferCap(1<<18),
-			// 启用多核心, 开启后NumEventLoops = coreSize
-			gnet.WithMulticore(true),
+			gnet.WithMulticore(false),
+			gnet.WithNumEventLoop(1), // 关闭多核心, 设置numEventLoop = 1, 用于模拟redis的单线程
 			// 启用定时任务
 			gnet.WithTicker(true),
 			// socket 60不活跃就会被驱逐
 			gnet.WithTCPKeepAlive(time.Second*time.Duration(defaultTimeout)),
-			gnet.WithReusePort(true),
+			gnet.WithReusePort(false),
 			// 使用最少连接的负载均衡算法为eventLoop分配conn
 			gnet.WithLoadBalancing(gnet.LeastConnections),
 			gnet.WithLogger(r.lg.Sugar().Named("tcp-server")),

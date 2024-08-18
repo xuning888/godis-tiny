@@ -17,7 +17,6 @@ import (
 func (r *RedisServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
 	r.engine = eng
 	r.dbEngine.Init()
-	r.listen()
 	r.lg.Sugar().Info("Ready to accept connections tcp")
 	return
 }
@@ -70,7 +69,6 @@ func (r *RedisServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	replies, err := codecc.Decode(data)
 	if err != nil && len(replies) == 0 {
 		if errors.Is(err, parser.ErrIncompletePacket) {
-			r.lg.Sugar().Error("ErrIncompletePacket1")
 			return gnet.None
 		}
 		r.lg.Sugar().Errorf("decode falied with error: %v", err)
@@ -83,14 +81,8 @@ func (r *RedisServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		for _, value := range replies {
 			cmd, _ := value.(*protocol.MultiBulkReply)
 			cmdReq := database2.MakeCmdReq(conn, cmd.Args)
-			err2 := r.dbEngine.PushReqEvent(cmdReq)
-			if err2 != nil {
-				err3 := r.quickWrite(c, protocol.MakeStandardErrReply("ERR Server is shutting down").ToBytes())
-				if err3 != nil {
-					r.lg.Sugar().Errorf("err3: %v", err3)
-				}
-				return gnet.None
-			}
+			cmdRes := r.dbEngine.Exec(cmdReq)
+			r.asyncWrite(c, cmdRes.GetReply().ToBytes())
 		}
 		if errors.Is(err, parser.ErrIncompletePacket) {
 			r.lg.Sugar().Error("ErrIncompletePacket1")
@@ -106,45 +98,10 @@ func (r *RedisServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	for _, value := range replies {
 		cmd, _ := value.(*protocol.MultiBulkReply)
 		cmdReq := database2.MakeCmdReq(conn, cmd.Args)
-		err2 := r.dbEngine.PushReqEvent(cmdReq)
-		if err2 != nil {
-			err3 := r.quickWrite(c, protocol.MakeStandardErrReply("ERR Server is shutting down").ToBytes())
-			if err3 != nil {
-				r.lg.Sugar().Errorf("err3: %v", err3)
-			}
-			return gnet.None
-		}
+		cmdRes := r.dbEngine.Exec(cmdReq)
+		r.asyncWrite(c, cmdRes.GetReply().ToBytes())
 	}
 	return
-}
-
-func (r *RedisServer) listen() {
-	r.lg.Sugar().Info("start listen cmdResQueue")
-	resEvent := r.dbEngine.DeliverResEvent()
-	go func() {
-		for {
-			select {
-			case cmdRes, ok := <-resEvent:
-				if !ok {
-					r.lg.Sugar().Info("stop listen cmdResQueue")
-					return
-				}
-				conn := cmdRes.GetConn()
-				if conn.IsInner() {
-					return
-				}
-				go func() {
-					finalCmdRes := cmdRes
-					redisConn := finalCmdRes.GetConn()
-					bytes := finalCmdRes.GetReply().ToBytes()
-					r.asyncWrite(redisConn.GnetConn(), bytes)
-				}()
-			case <-r.stopChan:
-				r.lg.Sugar().Info("stop listen due to shutdown signal")
-				return
-			}
-		}
-	}()
 }
 
 func (r *RedisServer) asyncWrite(c gnet.Conn, bytes []byte) {

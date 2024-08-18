@@ -28,10 +28,6 @@ type CmdLine = [][]byte
 type DBEngine interface {
 	// Init 做必要的初始化工作
 	Init()
-	// PushReqEvent 推送一个命令到dbEngine
-	PushReqEvent(req *CmdReq) error
-	// DeliverResEvent 接收res的channel
-	DeliverResEvent() <-chan *CmdRes
 	// Exec 同步调用
 	Exec(req *CmdReq) *CmdRes
 	// ForEach 遍历指定的db

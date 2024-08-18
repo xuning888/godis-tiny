@@ -97,6 +97,11 @@ func appendReply(reply []byte, replies []redis.Reply, c *Codec) []redis.Reply {
 func handleDecodeError(err error, c *Codec) error {
 	// 如果err是 黏包/半包 就直接返回，否则就把接收到的包丢弃
 	if errors.Is(err, ErrIncompletePacket) {
+		if (cap(c.buf)) < c.remainingBulkLength+2 {
+			newBuffer := make([]byte, 0, len(c.buf)+c.remainingBulkLength+2)
+			newBuffer = append(newBuffer, c.buf...)
+			c.buf = newBuffer
+		}
 		return err
 	}
 	c.Reset()
