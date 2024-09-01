@@ -83,7 +83,7 @@ func (r *RedisServer) Spin() {
 			gnet.WithTicker(true),
 			// socket 60不活跃就会被驱逐
 			gnet.WithTCPKeepAlive(time.Second*time.Duration(defaultTimeout)),
-			gnet.WithReusePort(false),
+			gnet.WithReusePort(true),
 			// 使用最少连接的负载均衡算法为eventLoop分配conn
 			gnet.WithLoadBalancing(gnet.LeastConnections),
 			gnet.WithLogger(r.lg.Sugar().Named("tcp-server")),
