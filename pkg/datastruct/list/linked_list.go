@@ -63,11 +63,12 @@ func (l *Linked) Get(index int) (ele interface{}, err error) {
 		return nil, ErrorOutIndex
 	}
 	i := 0
-	for e := l.list.Front(); e.Next() != nil; e = e.Next() {
+	for e := l.list.Front(); e != nil; e = e.Next() {
 		if i == index {
 			ele = e.Value
 			break
 		}
+		i++
 	}
 	return
 }

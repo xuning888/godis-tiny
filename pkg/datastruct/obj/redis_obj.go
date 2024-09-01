@@ -6,6 +6,7 @@ import (
 	"github.com/xuning888/godis-tiny/pkg/datastruct/list"
 	"github.com/xuning888/godis-tiny/pkg/datastruct/sds"
 	"strconv"
+	"unsafe"
 )
 
 type ObjectType int
@@ -105,6 +106,11 @@ func NewStringObject(p []byte) *RedisObject {
 	return redisObject
 }
 
+func NewStringEmptyObj() *RedisObject {
+	redisObject := NewObject(RedisString, nil)
+	return redisObject
+}
+
 func NewIntSetObject() *RedisObject {
 	intSet := intset.NewIntSet(intset.EncInt16)
 	object := NewObject(RedisSet, intSet)
@@ -169,8 +175,7 @@ func StringObjEncoding(obj *RedisObject) (result []byte, err error) {
 		return nil, ErrorObjectType
 	}
 	switch obj.Encoding {
-	case EncRaw:
-	case EncEmbStr:
+	case EncEmbStr | EncRaw:
 		sdss := obj.Ptr.(*sds.Sds)
 		result = *sdss
 		break
@@ -181,4 +186,40 @@ func StringObjEncoding(obj *RedisObject) (result []byte, err error) {
 		err = ErrorEncodingType
 	}
 	return
+}
+
+func StringObjMem(obj *RedisObject) (int64, error) {
+	if obj.ObjType != RedisString {
+		return 0, ErrorObjectType
+	}
+	sizeof := int64(unsafe.Sizeof(*obj)) + 8
+	switch obj.Encoding {
+	case EncRaw | EncEmbStr:
+		sdss := obj.Ptr.(*sds.Sds)
+		return sizeof + int64(sdss.Memory()) + int64(8), nil
+	case EncInt:
+		return sizeof + 8, nil
+	default:
+		return 0, ErrorEncodingType
+	}
+}
+
+func ListObjMem(obj *RedisObject) (int64, error) {
+	if obj.ObjType != RedisList {
+		return 0, ErrorObjectType
+	}
+	sizeof := int64(unsafe.Sizeof(*obj)) + 8
+	switch obj.Encoding {
+	case EncLinkedList:
+		dequeue := obj.Ptr.(list.Dequeue)
+		var sum int64
+		dequeue.ForEach(func(value interface{}, index int) bool {
+			bytes := value.([]byte)
+			sum += int64(cap(bytes))
+			return true
+		})
+		return sizeof + sum, nil
+	default:
+		return 0, ErrorEncodingType
+	}
 }

@@ -9,6 +9,54 @@ import (
 	"strconv"
 )
 
+func execLLen(c context.Context, conn *Client) error {
+	argNum := conn.GetArgNum()
+	if argNum != 1 {
+		return MakeNumberOfArgsErrReply(conn.GetCmdName()).WriteTo(conn)
+	}
+	args := conn.GetArgs()
+	key := string(args[0])
+	redisObj, exists := conn.GetDb().GetEntity(key)
+	if !exists {
+		return MakeIntReply(0).WriteTo(conn)
+	}
+	if redisObj.ObjType != obj.RedisList {
+		return MakeWrongTypeErrReply().WriteTo(conn)
+	}
+	dequeue := redisObj.Ptr.(list.Dequeue)
+	return MakeIntReply(int64(dequeue.Len())).WriteTo(conn)
+}
+
+func execLIndex(c context.Context, conn *Client) error {
+	argNum := conn.GetArgNum()
+	if argNum < 2 || argNum > 2 {
+		return MakeNumberOfArgsErrReply(conn.GetCmdName()).WriteTo(conn)
+	}
+	cmdData := conn.GetArgs()
+	key := string(cmdData[0])
+	redisObj, exists := conn.GetDb().GetEntity(key)
+	if !exists {
+		return MakeNullBulkReply().WriteTo(conn)
+	}
+
+	dequeue, ok := redisObj.Ptr.(list.Dequeue)
+	if !ok {
+		return MakeWrongTypeErrReply().WriteTo(conn)
+	}
+	index, err := strconv.ParseInt(string(cmdData[1]), 10, 64)
+	if err != nil {
+		return MakeOutOfRangeOrNotInt().WriteTo(conn)
+	}
+	if index < 0 {
+		index = int64(dequeue.Len()) + index
+	}
+	value, err := dequeue.Get(int(index))
+	if err != nil && errors.Is(err, list.ErrorOutIndex) {
+		return MakeNullBulkReply().WriteTo(conn)
+	}
+	return MakeBulkReply(value.([]byte)).WriteTo(conn)
+}
+
 func execLPush(c context.Context, conn *Client) error {
 	argNum := conn.GetArgNum()
 	if argNum < 2 {
@@ -240,9 +288,70 @@ func execRPush(c context.Context, conn *Client) error {
 	return MakeIntReply(int64(length)).WriteTo(conn)
 }
 
+// execRPop rpop key [count]
+func execRPop(c context.Context, conn *Client) error {
+	argNum := conn.GetArgNum()
+	if argNum < 1 || argNum > 2 {
+		return MakeNumberOfArgsErrReply(conn.GetCmdName()).WriteTo(conn)
+	}
+	cmdData := conn.GetArgs()
+	key := string(cmdData[0])
+	redisObj, exists := conn.GetDb().GetEntity(key)
+	if !exists {
+		return MakeNullBulkReply().WriteTo(conn)
+	}
+	var count int64 = 0
+	var err error = nil
+	if argNum > 1 {
+		count, err = strconv.ParseInt(string(cmdData[1]), 10, 64)
+		if err != nil {
+			return MakeOutOfRangeOrNotInt().WriteTo(conn)
+		}
+	}
+	dequeue, ok := redisObj.Ptr.(list.Dequeue)
+	if !ok {
+		return MakeWrongTypeErrReply()
+	}
+	if count > 0 {
+		ccap := util.MinInt64(count, int64(dequeue.Len()))
+		if _, err2 := conn.Write(MakeMultiBulkHeaderReply(ccap).ToBytes()); err2 != nil {
+			return err2
+		}
+		for i := 0; i < int(count); i++ {
+			pop, err := dequeue.RemoveLast()
+			if err != nil && errors.Is(err, list.ErrorEmpty) {
+				conn.GetDb().Remove(key)
+				break
+			}
+			if _, err4 := conn.Write(MakeBulkReply(pop.([]byte)).ToBytes()); err4 != nil {
+				return err4
+			}
+		}
+		if dequeue.Len() == 0 {
+			conn.GetDb().Remove(key)
+		}
+		conn.GetDb().AddAof(conn.GetCmdLine())
+		return conn.Flush()
+	}
+
+	pop, err := dequeue.RemoveLast()
+	if err != nil && errors.Is(err, list.ErrorEmpty) {
+		conn.GetDb().Remove(key)
+		return MakeNullBulkReply().WriteTo(conn)
+	}
+	if dequeue.Len() == 0 {
+		conn.GetDb().Remove(key)
+	}
+	conn.GetDb().AddAof(conn.GetCmdLine())
+	return MakeBulkReply(pop.([]byte)).WriteTo(conn)
+}
+
 func init() {
 	register("lpush", execLPush)
 	register("lpop", execLPop)
 	register("lrange", execLRange)
 	register("rpush", execRPush)
+	register("llen", execLLen)
+	register("lindex", execLIndex)
+	register("rpop", execRPop)
 }

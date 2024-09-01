@@ -40,10 +40,10 @@ func (r *RedisServer) cron() {
 }
 
 func (r *RedisServer) process(ctx context.Context, conn *Client) error {
-	//lock.Lock()
+	lock.Lock()
 	processWait.Add(1)
 	defer func() {
-		//lock.Unlock()
+		lock.Unlock()
 		processWait.Done()
 	}()
 
