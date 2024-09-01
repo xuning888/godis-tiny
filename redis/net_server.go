@@ -35,13 +35,12 @@ type RedisServer struct {
 	shutdown                atomic.Bool
 	dbs                     []*DB // dbs
 	aof                     *Aof
-	gnet.BuiltinEventEngine // eventHandler
-	//*database.Server                                   // db server
-	engine       gnet.Engine                // network engine
-	connManager  *Manager                   // conn manager
-	status       uint32                     // server status
-	lg           *zap.Logger                // log
-	signalWaiter func(err chan error) error // for shutdown
+	gnet.BuiltinEventEngine                            // eventHandler
+	engine                  gnet.Engine                // network engine
+	connManager             *Manager                   // conn manager
+	status                  uint32                     // server status
+	lg                      *zap.Logger                // log
+	signalWaiter            func(err chan error) error // for shutdown
 }
 
 func waitSignal(errCh chan error) error {
@@ -84,7 +83,7 @@ func (r *RedisServer) Spin() {
 			gnet.WithTicker(true),
 			// socket 60不活跃就会被驱逐
 			gnet.WithTCPKeepAlive(time.Second*time.Duration(defaultTimeout)),
-			gnet.WithReusePort(true),
+			gnet.WithReusePort(false),
 			// 使用最少连接的负载均衡算法为eventLoop分配conn
 			gnet.WithLoadBalancing(gnet.LeastConnections),
 			gnet.WithLogger(r.lg.Sugar().Named("tcp-server")),
