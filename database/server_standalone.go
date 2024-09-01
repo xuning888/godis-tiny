@@ -4,44 +4,42 @@ import (
 	"context"
 	"errors"
 	"github.com/xuning888/godis-tiny/config"
-	"github.com/xuning888/godis-tiny/interface/database"
-	"github.com/xuning888/godis-tiny/interface/redis"
-	"github.com/xuning888/godis-tiny/persistence"
-	atomic2 "github.com/xuning888/godis-tiny/pkg/atomic"
 	"github.com/xuning888/godis-tiny/pkg/logger"
 	"github.com/xuning888/godis-tiny/pkg/util"
-	"github.com/xuning888/godis-tiny/redis/connection"
-	"github.com/xuning888/godis-tiny/redis/protocol"
+	"github.com/xuning888/godis-tiny/redis"
 	"go.uber.org/zap"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
-var _ database.DBEngine = &Standalone{}
+var ErrorsShutdown = errors.New("shutdown")
 
 var lock = sync.Mutex{}
+var processWait sync.WaitGroup
 
-// Standalone 单机存储的存储引擎
-type Standalone struct {
-	shutdown *atomic2.Boolean
-	reqWait  sync.WaitGroup
-	resWait  sync.WaitGroup
-	ctx      context.Context
-	cancel   func()
-	dbSet    []*atomic.Value
-	aof      *persistence.Aof
+// Server 单机存储的存储引擎
+type Server struct {
+	shutdown atomic.Bool
+	dbSet    []*DB
+	aof      *Aof
 	lg       *zap.Logger
 }
 
-func (s *Standalone) Cron() {
-	cmdReq := database.MakeCmdReq(connection.SystemCon, util.ToCmdLine("ttlops"))
-	s.Exec(cmdReq)
+var systemClient = redis.NewClient(0, nil, true)
+
+var ttlOpsCmdLine = util.ToCmdLine("ttlops")
+
+func (s *Server) Cron() {
+	systemClient.PushCmd(ttlOpsCmdLine)
+	if err := s.Exec(context.Background(), systemClient); err != nil {
+		s.lg.Sugar().Infof("Cron ttl fiald: %v", err)
+	}
 	// 触发aof重写
 	s.aofRewrite()
 }
 
-func (s *Standalone) aofRewrite() {
+func (s *Server) aofRewrite() {
 	if !config.Properties.AppendOnly {
 		return
 	}
@@ -68,7 +66,7 @@ func (s *Standalone) aofRewrite() {
 		go func() {
 			err2 := s.aof.Rewrite()
 			if err2 != nil {
-				if !errors.Is(err2, persistence.ErrAofRewriteIsRunning) {
+				if !errors.Is(err2, ErrAofRewriteIsRunning) {
 					s.lg.Sugar().Errorf("aof rewrite failed with error: %v", err2)
 				}
 			} else {
@@ -78,19 +76,16 @@ func (s *Standalone) aofRewrite() {
 	}
 }
 
-func (s *Standalone) ForEach(dbIndex int, cb func(key string, entity *database.DataEntity, expiration *time.Time) bool) {
-	db, _ := s.selectDb(dbIndex)
-	if db.Len() > 0 {
-		db.ForEach(cb)
+func (s *Server) ForEach(dbIndex int, cb func(key string, entity *DataEntity, expiration *time.Time) bool) {
+	mdb, _ := s.SelectDb(dbIndex)
+	if mdb.Len() > 0 {
+		mdb.ForEach(cb)
 	}
 }
 
-func MakeStandalone() *Standalone {
-	server := &Standalone{}
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	server.ctx = ctx
-	server.cancel = cancelFunc
-	server.shutdown = new(atomic2.Boolean)
+func MakeServer() *Server {
+	server := &Server{}
+	server.shutdown = atomic.Bool{}
 	lg, err := logger.CreateLogger(logger.DefaultLevel)
 	if err != nil {
 		panic(err)
@@ -100,18 +95,18 @@ func MakeStandalone() *Standalone {
 		server.lg.Sugar().Errorf("new ants pool failed with error: %v", err)
 		panic(err)
 	}
-	dbSet := make([]*atomic.Value, config.Properties.Databases)
+	dbSet := make([]*DB, config.Properties.Databases)
 	for i := 0; i < config.Properties.Databases; i++ {
-		sdb := MakeSimpleDb(i, server, server)
-		holder := &atomic.Value{}
-		holder.Store(sdb)
-		dbSet[i] = holder
+		dbSet[i] = MakeSimpleDb(i, server)
 	}
 	server.dbSet = dbSet
 
 	if config.Properties.AppendOnly {
-		aofServer, err := persistence.NewAof(
-			server, config.AppendOnlyDir+config.Properties.AppendFilename, config.Properties.AppendFsync, MakeTemp)
+		aofServer, err := NewAof(
+			server.Exec, config.AppendOnlyDir+config.Properties.AppendFilename, config.Properties.AppendFsync, func() (Exec, ForEach) {
+				tempServer := MakeTempServer()
+				return tempServer.Exec, tempServer.ForEach
+			})
 		if err != nil {
 			panic(err)
 		}
@@ -120,95 +115,103 @@ func MakeStandalone() *Standalone {
 	return server
 }
 
-func MakeTemp() database.DBEngine {
-	server := &Standalone{}
-	dbSet := make([]*atomic.Value, 16)
+func MakeTempServer() *Server {
+	server := &Server{}
+	dbSet := make([]*DB, 16)
 	for i := 0; i < 16; i++ {
-		sdb := MakeSimpleDb(i, server, server)
-		holder := &atomic.Value{}
-		holder.Store(sdb)
-		dbSet[i] = holder
+		dbSet[i] = MakeSimpleDb(i, server)
 	}
 	server.dbSet = dbSet
 	return server
 }
 
-func (s *Standalone) CheckIndex(index int) error {
+func (s *Server) CheckIndex(index int) error {
 	if index >= len(s.dbSet) || index < 0 {
 		return errors.New("ERR DB index is out of range")
 	}
 	return nil
 }
 
-func (s *Standalone) Rewrite() error {
+func (s *Server) Rewrite() error {
 	return s.aof.Rewrite()
 }
 
-// Exec 这是一个无锁实现, 用于AofLoad
-func (s *Standalone) Exec(req *database.CmdReq) *database.CmdRes {
+func (s *Server) Exec(ctx context.Context, conn *redis.Client) error {
 	lock.Lock()
-	defer lock.Unlock()
-	// 执行命令
-	client := req.GetConn()
-	index := client.GetIndex()
-	var reply redis.Reply = nil
-	db, reply := s.selectDb(index)
-	if reply != nil {
-		return database.MakeCmdRes(client, reply)
-	}
-	cmdCtx := CtxPool.Get().(*CommandContext)
-	cmdCtx.db = db
-	cmdCtx.conn = client
-	cmdCtx.cmdLine = req.GetCmdLine()
+	processWait.Add(1)
 	defer func() {
-		cmdCtx.Reset()
-		CtxPool.Put(cmdCtx)
+		processWait.Done()
+		lock.Unlock()
 	}()
-	// 每次执行指令的时候都尝试和检查和清理过期的key
-	if cmdCtx.GetCmdName() != "ttlops" {
-		db.RandomCheckTTLAndClearV1()
+	if s.shutdown.Load() {
+		return ErrorsShutdown
 	}
-	// 执行指令
-	reply = db.Exec(context.Background(), cmdCtx)
-	if reply != nil {
-		return database.MakeCmdRes(client, reply)
+	for conn.HasRemaining() {
+		index := conn.GetDbIndex()
+		mdb, err := s.SelectDb(index)
+		if err != nil {
+			if err2 := redis.MakeStandardErrReply(err.Error()).WriteTo(conn); err2 != nil {
+				return err2
+			}
+			conn.ResetQueryBuffer()
+			return nil
+		}
+		if err = processCmd(mdb, conn); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (s *Standalone) CheckAndClearDb() {
-	for _, dbHolder := range s.dbSet {
-		val := dbHolder.Load()
-		if val != nil {
-			db := dbHolder.Load().(*DB)
-			db.RandomCheckTTLAndClearV1()
+func processCmd(db *DB, conn *redis.Client) error {
+	cmdCtx := CtxPool.Get().(*CommandContext)
+	defer func() {
+		cmdCtx.Reset()
+		CtxPool.Put(cmdCtx)
+	}()
+	cmdCtx.db = db
+	cmdCtx.conn = conn
+	cmdCtx.cmdLine = conn.PollCmd()
+	// 每次执行指令的时候都尝试和检查和清理过期的key
+	if cmdCtx.GetCmdName() != "ttlops" {
+		db.RandomCheckTTLAndClearV1()
+	}
+	if err := db.Exec(context.Background(), cmdCtx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) CheckAndClearDb() {
+	for _, mdb := range s.dbSet {
+		if mdb != nil {
+			mdb.RandomCheckTTLAndClearV1()
 		}
 	}
 }
 
-// selectDb 检查index是否在可选范围 0 ~ 15, 如果超过了范围返回错误的 reply, 否则返回一个对应index的db
-func (s *Standalone) selectDb(index int) (*DB, redis.Reply) {
+// SelectDb 检查index是否在可选范围 0 ~ 15, 如果超过了范围返回错误的 reply, 否则返回一个对应index的db
+func (s *Server) SelectDb(index int) (*DB, error) {
 	if index >= len(s.dbSet) || index < 0 {
-		return nil, protocol.MakeStandardErrReply("ERR DB index is out of range")
+		return nil, errors.New("ERR DB index is out of range")
 	}
-	return s.dbSet[index].Load().(*DB), nil
+	return s.dbSet[index], nil
 }
 
 // Init 初始化 standalone，开启一个消费者消费cmdReqQueue中的命令
-func (s *Standalone) Init() {
-	initResister()
+func (s *Server) Init() {
 	if config.Properties.AppendOnly {
 		s.aof.LoadAof(0)
 	}
 }
 
-func (s *Standalone) bindPersister(aof *persistence.Aof) {
+func (s *Server) bindPersister(aof *Aof) {
 	s.aof = aof
-	for _, db := range s.dbSet {
-		mDb := db.Load().(*DB)
-		mDb.addAof = func(cmdLine database.CmdLine) {
+	for _, ddb := range s.dbSet {
+		mDb := ddb
+		mDb.AddAof = func(cmdLine CmdLine) {
 			if config.Properties.AppendOnly {
-				s.aof.AppendAof(mDb.index, cmdLine)
+				s.aof.AppendAof(mDb.Index, cmdLine)
 			}
 		}
 	}
@@ -216,17 +219,30 @@ func (s *Standalone) bindPersister(aof *persistence.Aof) {
 
 // Shutdown 先处理AOF的落盘, 保证已经执行过的指令不丢。
 // 随后拒绝未进入队列的的请求
-func (s *Standalone) Shutdown(cancelCtx context.Context) (err error) {
+func (s *Server) Shutdown(cancelCtx context.Context) (err error) {
 	// 拒绝新的请求
-	s.shutdown.Set(true)
-	s.lg.Sugar().Info("User requested shutdown...")
-	// 等待已经接收的请求执行
-	s.reqWait.Wait()
-	// 等待执行完的请求返回数据
-	s.resWait.Wait()
-	s.cancel()
-	if config.Properties.AppendOnly {
-		err = s.aof.Shutdown(cancelCtx)
+	s.shutdown.Store(true)
+
+	processDone := make(chan struct{})
+
+	// 启动一个 goroutine 来等待所有现有请求处理完毕
+	go func() {
+		processWait.Wait()
+		close(processDone)
+	}()
+
+	// 使用 select 等待所有请求处理完毕或上下文超时
+	select {
+	case <-processDone:
+		// 所有请求处理完毕
+		s.lg.Sugar().Info("User requested shutdown...")
+		if config.Properties.AppendOnly {
+			err = s.aof.Shutdown(cancelCtx)
+		}
+	case <-cancelCtx.Done():
+		// 上下文取消或超时
+		s.lg.Sugar().Error("Shutdown was canceled or timed out.")
+		err = cancelCtx.Err()
 	}
 	return
 }

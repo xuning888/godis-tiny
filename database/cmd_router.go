@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	cmdManager = makeCommandManager()
+	CmdManager = makeCommandManager()
 )
 
 type commandFlag int
@@ -17,7 +17,7 @@ const (
 	readOnly commandFlag = 0
 	// writeOnly 对内存是只写操作
 	writeOnly commandFlag = 1
-	// readWrite 对内存是存在读写操作
+	// readWrite 对内存是存在读写操作  e
 	readWrite commandFlag = 2
 )
 
@@ -33,13 +33,13 @@ type command struct {
 	flag    commandFlag
 }
 
-func initResister() {
+/*func init() {
 	registerSystemCmd()
 	registerConnCmd()
 	registerKeyCmd()
 	registerStringCmd()
 	registerListCmd()
-}
+}*/
 
 type commandManager struct {
 	cmdTable map[string]*command
@@ -53,7 +53,7 @@ func (c *commandManager) registerCmd(cmdName string, execFunc ExeFunc, flag comm
 		exeFunc: execFunc,
 		flag:    flag,
 	}
-	c.lg.Sugar().Debugf("register command: %s, flag: %v", cmd.cmdName, flagNameMap[flag])
+	c.lg.Sugar().Infof("register command: %s, flag: %v", cmd.cmdName, flagNameMap[flag])
 	c.cmdTable[lower] = cmd
 }
 

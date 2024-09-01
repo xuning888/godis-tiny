@@ -1,118 +1,40 @@
-package database
+package redis
 
 import (
-	"context"
-	dict2 "github.com/xuning888/godis-tiny/pkg/datastruct/dict"
+	"github.com/xuning888/godis-tiny/pkg/datastruct/dict"
+	"github.com/xuning888/godis-tiny/pkg/datastruct/obj"
 	"github.com/xuning888/godis-tiny/pkg/datastruct/ttl"
 	"github.com/xuning888/godis-tiny/pkg/logger"
-	"github.com/xuning888/godis-tiny/redis"
 	"math/rand"
-	"strings"
-	"sync"
 	"time"
 )
 
-type CmdLine = [][]byte
-
-// CtxPool 减少重复的内存分配，降低GC压力
-var CtxPool = &sync.Pool{
-	New: func() interface{} {
-		return &CommandContext{}
-	},
-}
-
-type CommandContext struct {
-	db      *DB
-	conn    *redis.Client
-	cmdName string
-	cmdLine CmdLine
-	args    [][]byte
-}
-
-func (c *CommandContext) Reset() {
-	c.db = nil
-	c.conn = nil
-	c.cmdName = ""
-	c.cmdLine = nil
-	c.args = nil
-}
-
-func (c *CommandContext) GetCmdName() string {
-	if c.cmdName == "" {
-		if len(c.cmdLine) > 0 {
-			c.cmdName = strings.ToLower(string(c.cmdLine[0]))
-		}
-	}
-	return c.cmdName
-}
-
-func (c *CommandContext) GetArgs() [][]byte {
-	if c.args == nil {
-		c.args = c.cmdLine[1:]
-	}
-	return c.args
-}
-
-func (c *CommandContext) GetArgNum() int {
-	return len(c.GetArgs())
-}
-
-func (c *CommandContext) GetCmdLine() [][]byte {
-	return c.cmdLine
-}
-
-func (c *CommandContext) GetDb() *DB {
-	return c.db
-}
-
-func (c *CommandContext) GetConn() *redis.Client {
-	return c.conn
-}
-
-type ExeFunc func(c context.Context, ctx *CommandContext) error
-
-func nothingTodo(line CmdLine) {
-}
-
-// DB 存储数据的DB
 type DB struct {
 	Index    int
-	server   *Server
-	data     dict2.Dict
+	data     dict.Dict
 	ttlCache ttl.Cache
-	AddAof   func(line CmdLine)
+	AddAof   func(cmdline [][]byte)
 }
 
-// MakeSimpleDb 使用map的实现，无锁结构
-func MakeSimpleDb(index int, server *Server) *DB {
-	return &DB{
+func NewDB(index int, data dict.Dict, cache ttl.Cache) *DB {
+	db := &DB{
 		Index:    index,
-		server:   server,
-		data:     dict2.MakeSimpleDict(),
-		ttlCache: ttl.MakeSimple(),
-		AddAof:   nothingTodo,
+		data:     data,
+		ttlCache: cache,
+		AddAof:   func(cmdline [][]byte) {},
 	}
-}
-
-func (db *DB) Exec(c context.Context, ctx *CommandContext) error {
-	cmdName := ctx.GetCmdName()
-	cmd := CmdManager.getCmd(cmdName)
-	if cmd == nil {
-		args := ctx.GetArgs()
-		with := make([]string, 0, len(args))
-		for _, arg := range args {
-			with = append(with, "'"+string(arg)+"'")
-		}
-		return redis.MakeUnknownCommand(cmdName, with...).WriteTo(ctx.conn)
-	}
-	return cmd.exeFunc(c, ctx)
+	return db
 }
 
 /* ---- Data Access ----- */
 
-func (db *DB) ForEach(cb func(key string, data *DataEntity, expiration *time.Time) bool) {
+func (db *DB) Keys() []string {
+	return db.data.Keys()
+}
+
+func (db *DB) ForEach(cb func(key string, data *obj.RedisObject, expiration *time.Time) bool) {
 	db.data.ForEach(func(key string, val interface{}) bool {
-		entity, _ := val.(*DataEntity)
+		entity, _ := val.(*obj.RedisObject)
 		var expiration *time.Time = nil
 		expired, exists := db.ttlCache.IsExpired(key)
 		if exists && !expired {
@@ -124,24 +46,24 @@ func (db *DB) ForEach(cb func(key string, data *DataEntity, expiration *time.Tim
 }
 
 // GetEntity getData
-func (db *DB) GetEntity(key string) (*DataEntity, bool) {
+func (db *DB) GetEntity(key string) (*obj.RedisObject, bool) {
 	row, exists := db.data.Get(key)
 	if !exists {
 		return nil, false
 	}
-	entity, _ := row.(*DataEntity)
+	entity, _ := row.(*obj.RedisObject)
 	return entity, true
 }
 
-func (db *DB) PutEntity(key string, entry *DataEntity) int {
-	return db.data.Put(key, entry)
+func (db *DB) PutEntity(key string, obj *obj.RedisObject) int {
+	return db.data.Put(key, obj)
 }
 
-func (db *DB) PutIfExists(key string, entity *DataEntity) int {
+func (db *DB) PutIfExists(key string, entity *obj.RedisObject) int {
 	return db.data.PutIfExists(key, entity)
 }
 
-func (db *DB) PutIfAbsent(key string, entity *DataEntity) int {
+func (db *DB) PutIfAbsent(key string, entity *obj.RedisObject) int {
 	return db.data.PutIfAbsent(key, entity)
 }
 

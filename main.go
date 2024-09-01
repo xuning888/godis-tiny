@@ -5,7 +5,7 @@ import (
 	"github.com/xuning888/godis-tiny/config"
 	"github.com/xuning888/godis-tiny/pkg/logger"
 	"github.com/xuning888/godis-tiny/pkg/util"
-	"github.com/xuning888/godis-tiny/tcp"
+	"github.com/xuning888/godis-tiny/redis"
 	"os"
 )
 
@@ -60,6 +60,6 @@ func main() {
 	} else {
 		setupConfiguration("redis.conf")
 	}
-	server := tcp.NewRedisServer()
-	server.Spin()
+	s := redis.NewRedisServer()
+	s.Spin()
 }

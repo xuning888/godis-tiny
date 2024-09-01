@@ -2,45 +2,44 @@ package database
 
 import (
 	"context"
-	"github.com/xuning888/godis-tiny/interface/redis"
-	"github.com/xuning888/godis-tiny/redis/protocol"
+	"github.com/xuning888/godis-tiny/redis"
 	"strconv"
 )
 
 // ping exc ping reply pong
-func ping(c context.Context, ctx *CommandContext) redis.Reply {
+func ping(c context.Context, ctx *CommandContext) error {
 	args := ctx.GetArgs()
 	if len(args) == 0 {
-		return protocol.MakePongReply()
+		return redis.MakePongReply().WriteTo(ctx.GetConn())
 	} else if len(args) == 1 {
-		return protocol.MakeBulkReply(args[0])
+		return redis.MakeBulkReply(args[0]).WriteTo(ctx.GetConn())
 	} else {
-		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
+		return redis.MakeNumberOfArgsErrReply(ctx.GetCmdName()).WriteTo(ctx.GetConn())
 	}
 }
 
 // selectDb
-func selectDb(c context.Context, ctx *CommandContext) redis.Reply {
+func selectDb(c context.Context, ctx *CommandContext) error {
 	db := ctx.GetDb()
 	conn := ctx.GetConn()
 	argNum := ctx.GetArgNum()
 	if argNum < 1 || argNum > 1 {
-		return protocol.MakeNumberOfArgsErrReply(ctx.GetCmdName())
+		return redis.MakeNumberOfArgsErrReply(ctx.GetCmdName()).WriteTo(conn)
 	}
 	cmdData := ctx.GetArgs()
 	index, err := strconv.Atoi(string(cmdData[0]))
 	if err != nil {
-		return protocol.MakeOutOfRangeOrNotInt()
+		return redis.MakeOutOfRangeOrNotInt().WriteTo(conn)
 	}
-	err = db.engineCommand.CheckIndex(index)
+	err = db.server.CheckIndex(index)
 	if err != nil {
-		return protocol.MakeStandardErrReply(err.Error())
+		return redis.MakeStandardErrReply(err.Error()).WriteTo(conn)
 	}
-	conn.SetIndex(index)
-	return protocol.MakeOkReply()
+	conn.SetDbIndex(index)
+	return redis.MakeOkReply().WriteTo(conn)
 }
 
 func registerConnCmd() {
-	cmdManager.registerCmd("ping", ping, readOnly)
-	cmdManager.registerCmd("select", selectDb, writeOnly)
+	CmdManager.registerCmd("ping", ping, readOnly)
+	CmdManager.registerCmd("select", selectDb, writeOnly)
 }

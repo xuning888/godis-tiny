@@ -1,7 +1,6 @@
 package util
 
 import (
-	"github.com/xuning888/godis-tiny/interface/database"
 	"io"
 	"log"
 	"math/rand"
@@ -17,7 +16,7 @@ func MinInt64(a, b int64) int64 {
 	return b
 }
 
-func ToCmdLine(key string, args ...string) database.CmdLine {
+func ToCmdLine(key string, args ...string) [][]byte {
 	var capp = 1 + len(args)
 	cmdLine := make([][]byte, 0, capp)
 	cmdLine = append(cmdLine, []byte(key))
@@ -27,7 +26,7 @@ func ToCmdLine(key string, args ...string) database.CmdLine {
 	return cmdLine
 }
 
-func ToCmdLine2(key string, args [][]byte) database.CmdLine {
+func ToCmdLine2(key string, args [][]byte) [][]byte {
 	var capp = 1 + len(args)
 	cmdLine := make([][]byte, 0, capp)
 	cmdLine = append(cmdLine, []byte(key))
@@ -37,7 +36,7 @@ func ToCmdLine2(key string, args [][]byte) database.CmdLine {
 
 var expireat = []byte("expireat")
 
-func MakeExpireCmd(key string, expireAt time.Time) database.CmdLine {
+func MakeExpireCmd(key string, expireAt time.Time) [][]byte {
 	args := make([][]byte, 3)
 	args[0] = expireat
 	args[1] = []byte(key)
