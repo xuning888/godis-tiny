@@ -37,8 +37,8 @@ func TestNewStringObj(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			redisObj := NewStringObject(tc.Input)
 			assert.Equal(t, RedisString, redisObj.ObjType)
-			assert.Equal(t, tc.wantEnc, redisObj.encoding)
-			assert.Equal(t, tc.wantValue, redisObj.ptr)
+			assert.Equal(t, tc.wantEnc, redisObj.Encoding)
+			assert.Equal(t, tc.wantValue, redisObj.Ptr)
 		})
 	}
 }
@@ -46,16 +46,16 @@ func TestNewStringObj(t *testing.T) {
 func TestStringObjIntConvertRaw(t *testing.T) {
 	redisObj := NewStringObject([]byte("10086"))
 	assert.Equal(t, RedisString, redisObj.ObjType)
-	assert.Equal(t, EncInt, redisObj.encoding)
-	assert.Equal(t, int64(10086), redisObj.ptr)
+	assert.Equal(t, EncInt, redisObj.Encoding)
+	assert.Equal(t, int64(10086), redisObj.Ptr)
 	StringObjIntConvertRaw(redisObj, nil)
 	assert.Equal(t, RedisString, redisObj.ObjType)
-	assert.Equal(t, EncRaw, redisObj.encoding)
-	assert.Equal(t, sds.NewWithBytes([]byte("10086")), redisObj.ptr)
+	assert.Equal(t, EncRaw, redisObj.Encoding)
+	assert.Equal(t, sds.NewWithBytes([]byte("10086")), redisObj.Ptr)
 
 	redisObj = NewStringObject([]byte("10086"))
 	StringObjIntConvertRaw(redisObj, []byte("hello"))
 	assert.Equal(t, RedisString, redisObj.ObjType)
-	assert.Equal(t, EncRaw, redisObj.encoding)
-	assert.Equal(t, sds.NewWithBytes([]byte("10086hello")), redisObj.ptr)
+	assert.Equal(t, EncRaw, redisObj.Encoding)
+	assert.Equal(t, sds.NewWithBytes([]byte("10086hello")), redisObj.Ptr)
 }
