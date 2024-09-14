@@ -42,10 +42,7 @@ func printHelp() {
 }
 
 func main() {
-	_, err := logger.SetUpLoggerv2(logger.DefaultLevel)
-	if err != nil {
-		panic(err)
-	}
+	logger.InitLogger()
 	args := os.Args[1:]
 	if len(args) > 0 {
 		for _, arg := range args {

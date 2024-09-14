@@ -13,7 +13,7 @@ import (
 func (r *RedisServer) OnBoot(eng gnet.Engine) (action gnet.Action) {
 	r.engine = eng
 	r.Init()
-	r.lg.Sugar().Info("Ready to accept connections tcp")
+	r.lg.Infof("The server is now ready to accept connections on port %v", config.Properties.Port)
 	return
 }
 
@@ -26,11 +26,11 @@ func (r *RedisServer) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 
 	// 如果连接数达到了最大值, 就拒绝连接
 	if connectedClients >= maxClients {
-		r.lg.Sugar().Infof("max number of clients reached. clients_connected: %v, maxclinets: %v",
+		r.lg.Infof("max number of clients reached. clients_connected: %v, maxclinets: %v",
 			connectedClients, maxClients)
 		return MakeStandardErrReply("ERR max number of clients reached").ToBytes(), gnet.Close
 	}
-	r.lg.Sugar().Debugf("accept conn: %v", c.RemoteAddr())
+	r.lg.Debugf("accept conn: %v", c.RemoteAddr())
 	r.connManager.RegisterConn(c.Fd(), NewClient(c.Fd(), c, false))
 	return nil, gnet.None
 }
@@ -39,12 +39,12 @@ func (r *RedisServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	remoteAddr := c.RemoteAddr()
 	if err != nil {
 		if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			r.lg.Sugar().Debugf("conn: %v, closed", remoteAddr)
+			r.lg.Debugf("conn: %v, closed", remoteAddr)
 		} else {
-			r.lg.Sugar().Errorf("conn: %v closed, error: %v", remoteAddr, err)
+			r.lg.Errorf("conn: %v closed, error: %v", remoteAddr, err)
 		}
 	} else {
-		r.lg.Sugar().Debugf("conn: %v, closed", remoteAddr)
+		r.lg.Debugf("conn: %v, closed", remoteAddr)
 	}
 	r.connManager.RemoveConnByKey(c.Fd())
 	return
@@ -62,10 +62,10 @@ func (r *RedisServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		if errors.Is(err, ErrIncompletePacket) {
 			return gnet.None
 		}
-		r.lg.Sugar().Errorf("decode falied with error: %v", err)
+		r.lg.Errorf("decode falied with error: %v", err)
 		_, err := conn.Write(MakeStandardErrReply(err.Error()).ToBytes())
 		if err != nil {
-			r.lg.Sugar().Errorf("write to peer falied with error: %v", err)
+			r.lg.Errorf("write to peer falied with error: %v", err)
 		}
 		return gnet.Close
 	} else if err != nil && conn.HasRemaining() {
@@ -75,16 +75,16 @@ func (r *RedisServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 				_ = MakeStandardErrReply("ERR Server is shutting down").WriteTo(conn)
 				return gnet.Close
 			}
-			r.lg.Sugar().Errorf("process command failed: %v", err)
+			r.lg.Errorf("process command failed: %v", err)
 			return gnet.Close
 		}
 		if errors.Is(err, ErrIncompletePacket) {
 			return gnet.None
 		}
-		r.lg.Sugar().Errorf("decode falied with error: %v", err)
+		r.lg.Errorf("decode falied with error: %v", err)
 		_, err = conn.Write(MakeStandardErrReply(err.Error()).ToBytes())
 		if err != nil {
-			r.lg.Sugar().Errorf("write to peer falied with error: %v", err)
+			r.lg.Errorf("write to peer falied with error: %v", err)
 		}
 		return gnet.Close
 	}
@@ -94,7 +94,7 @@ func (r *RedisServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 			_ = MakeStandardErrReply("ERR Server is shutting down").WriteTo(conn)
 			return gnet.Close
 		}
-		r.lg.Sugar().Errorf("process command failed: %v", err)
+		r.lg.Errorf("process command failed: %v", err)
 		return gnet.Close
 	}
 	return

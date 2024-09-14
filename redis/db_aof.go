@@ -7,7 +7,6 @@ import (
 	"github.com/xuning888/godis-tiny/pkg/datastruct/obj"
 	"github.com/xuning888/godis-tiny/pkg/logger"
 	"github.com/xuning888/godis-tiny/pkg/util"
-	"go.uber.org/zap"
 	"io"
 	"os"
 	"path/filepath"
@@ -90,7 +89,7 @@ type Aof struct {
 	// cancel
 	cancel context.CancelFunc
 	// logger
-	lg *zap.Logger
+	lg logger.Logger
 	// mux
 	mux sync.Mutex
 	// lastRewriteAofSize
@@ -132,7 +131,7 @@ func (a *Aof) writeAof(dbIndex int, cmdLine [][]byte) {
 		_, err := a.fileBuffer.Write(selectData)
 		if err != nil {
 			// 切换db失败
-			a.lg.Sugar().Errorf("write aof file buffer failed with error: %v", err)
+			a.lg.Errorf("write aof file buffer failed with error: %v", err)
 			return
 		}
 		a.currentDb = dbIndex
@@ -141,14 +140,14 @@ func (a *Aof) writeAof(dbIndex int, cmdLine [][]byte) {
 	// 写入文件缓冲区
 	_, err := a.fileBuffer.Write(cmdLineData)
 	if err != nil {
-		a.lg.Sugar().Errorf("write aof file buffer failed with error: %v", err)
+		a.lg.Errorf("write aof file buffer failed with error: %v", err)
 	}
 
 	// 如果模式是always,就将内存中的数据拷贝到磁盘
 	if a.aofFsync == FsyncAlways {
 		err = a.fileBuffer.Sync()
 		if err != nil {
-			a.lg.Sugar().Errorf("wirte aof file sync fialed with error: %v", err)
+			a.lg.Errorf("wirte aof file sync fialed with error: %v", err)
 		}
 	}
 }
@@ -165,7 +164,7 @@ func (a *Aof) LoadAof(maxBytes int) {
 
 	file, err := os.Open(a.aofFilename)
 	if err != nil {
-		a.lg.Sugar().Errorf("load aof failed with error: %v", err)
+		a.lg.Errorf("load aof failed with error: %v", err)
 		return
 	}
 	defer file.Close()
@@ -182,30 +181,30 @@ func (a *Aof) LoadAof(maxBytes int) {
 			if p.Error == io.EOF {
 				break
 			}
-			a.lg.Sugar().Error("parse error: " + p.Error.Error())
+			a.lg.Error("parse error: " + p.Error.Error())
 			continue
 		}
 		if p.Data == nil {
-			a.lg.Sugar().Error("empty payload")
+			a.lg.Error("empty payload")
 			continue
 		}
 		reply, ok := p.Data.(*MultiBulkReply)
 		if !ok {
-			a.lg.Sugar().Error("require multi bulk protocol")
+			a.lg.Error("require multi bulk protocol")
 			continue
 		}
 		conn.PushCmd(reply.Args)
 		err2 := a.exec(context.Background(), conn)
 		if err2 != nil {
 			if !errors.Is(err2, ErrorsShutdown) {
-				a.lg.Sugar().Warnf("load aof falied with error: %s", err2)
+				a.lg.Warnf("load aof falied with error: %s", err2)
 			}
 			continue
 		}
 		if strings.ToLower(string(reply.Args[0])) == "select" {
 			dbIndex, err2 := strconv.Atoi(string(reply.Args[1]))
 			if err2 != nil {
-				a.lg.Sugar().Error(err2)
+				a.lg.Error(err2)
 			}
 			a.currentDb = dbIndex
 		}
@@ -227,7 +226,7 @@ func (a *Aof) fsyncEverySecond() {
 			return
 		}
 		if err := a.fileBuffer.Sync(); err != nil {
-			a.lg.Sugar().Errorf("fsync everysec failed: %v", err)
+			a.lg.Errorf("fsync everysec failed: %v", err)
 		}
 	}
 	go func() {
@@ -249,16 +248,16 @@ func (a *Aof) Shutdown(ctx context.Context) (err error) {
 		a.cancel()
 		// 关闭aof文件
 		if err = a.fileBuffer.Close(); err != nil {
-			a.lg.Sugar().Errorf("close aof file failed with error: %v", err)
+			a.lg.Errorf("close aof file failed with error: %v", err)
 		}
-		a.lg.Sugar().Info("shutdown aof complete...")
+		a.lg.Info("shutdown aof complete...")
 	}()
-	a.lg.Sugar().Infof("shutdown aof begin...")
+	a.lg.Infof("shutdown aof begin...")
 	ticker := time.NewTicker(time.Millisecond * 10)
 	defer ticker.Stop()
 	for {
 		// 尝试把文件数据都落盘
-		a.lg.Sugar().Info("Calling fsync() on the Aof file.")
+		a.lg.Info("Calling fsync() on the Aof file.")
 		err = a.fileBuffer.Sync()
 		if err != nil {
 			return
@@ -267,7 +266,7 @@ func (a *Aof) Shutdown(ctx context.Context) (err error) {
 		if buffered = a.fileBuffer.Buffered(); buffered == 0 {
 			break
 		}
-		a.lg.Sugar().Infof("Shutdown aof buffered: %v", buffered)
+		a.lg.Infof("Shutdown aof buffered: %v", buffered)
 		select {
 		case <-ctx.Done():
 			err = ctx.Err()
@@ -299,12 +298,7 @@ func NewAof(exec Exec, filename string, fsync string, tempDbMaker func() (Exec, 
 	ctx, cancel := context.WithCancel(context.Background())
 	persister.ctx = ctx
 	persister.cancel = cancel
-
-	lg, err := logger.CreateLogger(logger.DefaultLevel)
-	if err != nil {
-		return nil, err
-	}
-	persister.lg = lg.Named("aof-persister")
+	persister.lg = logger.Named("aof-persister")
 
 	if persister.aofFsync == FsyncEverySec {
 		persister.fsyncEverySecond()

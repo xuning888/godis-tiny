@@ -32,7 +32,7 @@ type ServerProperties struct {
 	CfPath string `cfg:"cf,omitempty"`
 }
 
-var Properties = &ServerProperties{}
+var Properties *ServerProperties = nil
 
 func init() {
 	Properties = &ServerProperties{
@@ -137,8 +137,4 @@ func SetUpConfig(filename string) {
 	if Properties.Databases == 0 {
 		Properties.Databases = 16
 	}
-}
-
-func TmpDir() string {
-	return AppendOnlyDir + "rewrite-tmp"
 }

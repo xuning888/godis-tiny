@@ -1,47 +1,34 @@
 package logger
 
 import (
+	"fmt"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"time"
 )
 
-var DefaultLevel = zapcore.InfoLevel
+var globalLogger *zap.Logger
 
-var logger *zap.Logger = nil
-
-func SetUpLogger(level zapcore.Level) (*zap.Logger, error) {
-	lgcfg := DefaultZapLoggerConfig
-	lgcfg.Level = zap.NewAtomicLevelAt(level)
-	var err error = nil
-	logger, err = lgcfg.Build()
+func InitLogger() {
+	lgCfg := DefaultZapLoggerConfig
+	logger, err := lgCfg.Build()
 	if err != nil {
-		return nil, err
+		panic(fmt.Errorf("init logger failed: %w", err))
 	}
-	return logger, err
+	zap.ReplaceGlobals(logger)
+	globalLogger = logger
 }
 
-func SetUpLoggerv2(level zapcore.Level) (*zap.Logger, error) {
-	lgcfg := DefaultZapLoggerConfig
-	lgcfg.Level = zap.NewAtomicLevelAt(level)
-	lg, err := lgcfg.Build()
-	logger = lg
-	return lg, err
+func Named(name string) Logger {
+	sugar := globalLogger.Named(name).Sugar()
+	return sugar
 }
 
-func CreateLogger(level zapcore.Level) (*zap.Logger, error) {
-	lgcfg := DefaultZapLoggerConfig
-	lgcfg.Level = zap.NewAtomicLevelAt(level)
-	lg, err := lgcfg.Build()
-	if err != nil {
-		return nil, err
-	}
-	return lg, err
-}
+var DefaultLevel = zap.InfoLevel
 
 var DefaultZapLoggerConfig = zap.Config{
 	Level:       zap.NewAtomicLevelAt(DefaultLevel),
-	Development: false,
+	Development: true,
 	Sampling: &zap.SamplingConfig{
 		Initial:    100,
 		Thereafter: 100,
@@ -71,41 +58,4 @@ var DefaultZapLoggerConfig = zap.Config{
 
 	OutputPaths:      []string{"stderr"},
 	ErrorOutputPaths: []string{"stderr"},
-}
-
-func Infof(format string, args ...interface{}) {
-	sugar := logger.Sugar()
-	sugar.Infof(format, args...)
-}
-
-func Info(args ...interface{}) {
-	logger.Sugar().Info(args...)
-}
-
-func Debugf(format string, args ...interface{}) {
-	logger.Sugar().Debugf(format, args...)
-}
-
-func Debug(args ...interface{}) {
-	logger.Sugar().Debug(args...)
-}
-
-func Warn(args ...interface{}) {
-	logger.Sugar().Warn(args...)
-}
-
-func Warnf(format string, args ...interface{}) {
-	logger.Sugar().Warnf(format, args...)
-}
-
-func Error(args ...interface{}) {
-	logger.Sugar().Error(args...)
-}
-
-func Errorf(format string, args ...interface{}) {
-	logger.Sugar().Errorf(format, args...)
-}
-
-func Fatal(args ...interface{}) {
-	logger.Sugar().Fatal(args...)
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/xuning888/godis-tiny/pkg/datastruct/dict"
 	"github.com/xuning888/godis-tiny/pkg/datastruct/ttl"
 	"github.com/xuning888/godis-tiny/pkg/logger"
-	"go.uber.org/zap"
 	"os"
 	"os/signal"
 	"sync/atomic"
@@ -39,7 +38,7 @@ type RedisServer struct {
 	engine                  gnet.Engine                // network engine
 	connManager             *Manager                   // conn manager
 	status                  uint32                     // server status
-	lg                      *zap.Logger                // log
+	lg                      logger.Logger              // log
 	signalWaiter            func(err chan error) error // for shutdown
 }
 
@@ -86,7 +85,7 @@ func (r *RedisServer) Spin() {
 			gnet.WithReusePort(true),
 			// 使用最少连接的负载均衡算法为eventLoop分配conn
 			gnet.WithLoadBalancing(gnet.LeastConnections),
-			gnet.WithLogger(r.lg.Sugar().Named("tcp-server")),
+			gnet.WithLogger(logger.Named("tcp-server")),
 		)
 	}()
 
@@ -103,7 +102,7 @@ func (r *RedisServer) Spin() {
 	defer cancel()
 
 	if err := r.Shutdown(ctx); err != nil {
-		r.lg.Sugar().Error(err)
+		r.lg.Errorf("Shutdown failed %v", err)
 		return
 	}
 }
@@ -120,15 +119,15 @@ func (r *RedisServer) Shutdown(ctx context.Context) (err error) {
 
 	// stop redis engine
 	if err = r.shutdown0(ctx); err != nil {
-		r.lg.Sugar().Errorf("stop dbEngine failed with error: %v", err)
+		r.lg.Errorf("stop dbEngine failed with error: %v", err)
 	}
 
 	// stop network engine
 	if err = r.engine.Stop(ctx); err != nil {
-		r.lg.Sugar().Errorf("stop network engine failed with error: %v", err)
+		r.lg.Errorf("stop network engine failed with error: %v", err)
 	}
 
-	r.lg.Sugar().Info("Redis is now ready to exit, bye bye...")
+	r.lg.Info("Redis is now ready to exit, bye bye...")
 
 	atomic.StoreUint32(&r.status, statusClosed)
 	return
@@ -148,12 +147,12 @@ func (r *RedisServer) shutdown0(ctx context.Context) (err error) {
 	// 使用 select 等待所有请求处理完毕或上下文超时
 	select {
 	case <-processDone:
-		r.lg.Sugar().Info("User requested shutdown...")
+		r.lg.Info("User requested shutdown...")
 		if config.Properties.AppendOnly {
 			err = r.aof.Shutdown(ctx)
 		}
 	case <-ctx.Done():
-		r.lg.Sugar().Error("Shutdown was canceled or timed out.")
+		r.lg.Error("Shutdown was canceled or timed out.")
 		err = ctx.Err()
 	}
 	return
@@ -167,7 +166,7 @@ func NewRedisServer() *RedisServer {
 
 	if config.Properties.AppendOnly {
 		aofServer, err := NewAof(
-			server.process, config.AppendOnlyDir+config.Properties.AppendFilename, config.Properties.AppendFsync, func() (Exec, ForEach) {
+			server.process, config.Properties.AppendFilename, config.Properties.AppendFsync, func() (Exec, ForEach) {
 				tempServer := makeTempServer()
 				return tempServer.process, tempServer.ForEach
 			})
@@ -178,8 +177,7 @@ func NewRedisServer() *RedisServer {
 	}
 
 	server.status = statusInitialized
-	lg, _ := logger.CreateLogger(logger.DefaultLevel)
-	server.lg = lg.Named("redis-server")
+	server.lg = logger.Named("redis-server")
 	return server
 }
 

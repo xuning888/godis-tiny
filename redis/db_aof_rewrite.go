@@ -50,7 +50,7 @@ func (a *Aof) Rewrite() error {
 
 	// 加锁禁止aof写入，直到aof数据整合完毕
 	a.FinishRewrite(ctx)
-	a.lg.Sugar().Info("rewrite aof completed")
+	a.lg.Info("rewrite aof completed")
 	atomic.CompareAndSwapUint32(&a.status, rewrite, none)
 	return nil
 }
@@ -63,7 +63,7 @@ func (a *Aof) DoRewrite(ctx *RewriteCtx) (err error) {
 	defer func() {
 		err = buffer.Flush()
 		if err != nil {
-			a.lg.Sugar().Errorf("DoRewrite flush aof file failed with error: %v", err)
+			a.lg.Errorf("DoRewrite flush aof file failed with error: %v", err)
 		}
 	}()
 
@@ -114,7 +114,7 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 		// 尝试打开重写前的 aof文件
 		src, err := os.Open(a.aofFilename)
 		if err != nil {
-			a.lg.Sugar().Errorf("open aofFilname %v fialed with error: %v", a.aofFilename, err)
+			a.lg.Errorf("open aofFilname %v fialed with error: %v", a.aofFilename, err)
 			return true
 		}
 
@@ -128,7 +128,7 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 		// 跳转到重写前的末尾
 		_, err = src.Seek(ctx.fileSize, io.SeekStart)
 		if err != nil {
-			a.lg.Sugar().Warnf("seek failed with error: %v", err)
+			a.lg.Warnf("seek failed with error: %v", err)
 			return true
 		}
 
@@ -137,7 +137,7 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 
 		written1, err := buffer.Write(selectDbBytes)
 		if err != nil {
-			a.lg.Sugar().Errorf("tmp file rewrite failed with error: %v", err)
+			a.lg.Errorf("tmp file rewrite failed with error: %v", err)
 			return true
 		}
 		ctx.writtenSize += int64(written1)
@@ -145,7 +145,7 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 		// 把重写时可能写入到原来aof文件中命令拷贝到tmp文件中
 		written2, err := io.Copy(buffer, src)
 		if err != nil {
-			a.lg.Sugar().Errorf("copy aof file failed with error: %v", err)
+			a.lg.Errorf("copy aof file failed with error: %v", err)
 			return true
 		}
 		ctx.writtenSize += written2
@@ -155,7 +155,7 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 	// 把DoRewrite期间的产生的数据落盘
 	err2 := a.fileBuffer.Sync()
 	if err2 != nil {
-		a.lg.Sugar().Errorf("last sync aoffile fialed error %v", err2)
+		a.lg.Errorf("last sync aoffile fialed error %v", err2)
 		return
 	}
 
@@ -166,11 +166,11 @@ func (a *Aof) FinishRewrite(ctx *RewriteCtx) {
 	// 关闭原来的aofFile
 	err := a.fileBuffer.Close()
 	if err != nil {
-		a.lg.Sugar().Errorf("close aofFile failed with error: %v", err)
+		a.lg.Errorf("close aofFile failed with error: %v", err)
 	}
 	// 使用 mv 命令把 原来的 aofFile 替换为 重写后的 tmpFile
 	if err = os.Rename(tmpFile.Name(), a.aofFilename); err != nil {
-		a.lg.Sugar().Errorf("rename aof file failed with error: %v", err)
+		a.lg.Errorf("rename aof file failed with error: %v", err)
 	}
 
 	// 记录aof重写完成后的文件大小
@@ -199,7 +199,7 @@ func (a *Aof) StartRewrite() (*RewriteCtx, error) {
 	// fsync 将缓冲区中的数据落盘，防止aof文件不完整造成数据错误
 	err := a.fileBuffer.Sync()
 	if err != nil {
-		a.lg.Sugar().Warnf("fsync failed, err: %v", err)
+		a.lg.Warnf("fsync failed, err: %v", err)
 		return nil, err
 	}
 
@@ -208,19 +208,10 @@ func (a *Aof) StartRewrite() (*RewriteCtx, error) {
 	fileInfo, _ := os.Stat(a.aofFilename)
 	filesize := fileInfo.Size()
 
-	// 创建临时文件目录
-	if _, err = os.Stat(config.TmpDir()); os.IsNotExist(err) {
-		err = os.MkdirAll(config.TmpDir(), 0755)
-		if err != nil {
-			a.lg.Sugar().Errorf("tmp file create failed, err: %v", err)
-			return nil, err
-		}
-	}
-
 	// 创建临时文件供重写使用
-	file, err := os.CreateTemp(config.TmpDir(), "*.aof")
+	file, err := os.CreateTemp("", "*.aof")
 	if err != nil {
-		a.lg.Sugar().Warnf("tmp file create failed, err: %v", err)
+		a.lg.Warnf("tmp file create failed, err: %v", err)
 		return nil, err
 	}
 
@@ -287,10 +278,6 @@ func (a *Aof) newRewriteHandler() *Aof {
 	h := &Aof{}
 	h.aofFilename = a.aofFilename
 	h.exec, h.each = a.tempDbMaker()
-	lg, err := logger.CreateLogger(logger.DefaultLevel)
-	if err != nil {
-		panic(err)
-	}
-	h.lg = lg
+	h.lg = logger.Named("aof-rewrite")
 	return h
 }

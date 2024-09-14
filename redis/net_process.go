@@ -19,7 +19,9 @@ var (
 )
 
 func (r *RedisServer) Init() {
+	begin := time.Now()
 	r.loadAof()
+	r.lg.Infof("DB loaded from append only file: %.3f seconds", time.Now().Sub(begin).Seconds())
 }
 
 func (r *RedisServer) loadAof() {
@@ -36,7 +38,7 @@ func (r *RedisServer) cron() {
 		return
 	}
 	// 触发aof重写
-	r.doAofRewrite()
+	//r.doAofRewrite()
 }
 
 func (r *RedisServer) process(ctx context.Context, conn *Client) error {
@@ -88,7 +90,7 @@ func (r *RedisServer) processCmd(ctx context.Context, conn *Client) error {
 		}
 		return MakeUnknownCommand(cmdName, with...).WriteTo(conn)
 	}
-	if cmdName == "ttlops" {
+	if cmdName != "ttlops" {
 		conn.GetDb().RandomCheckTTLAndClearV1()
 	}
 	return cmd.process(ctx, conn)
@@ -135,7 +137,7 @@ func (r *RedisServer) doAofRewrite() {
 	// 当前aof文件的大小
 	currentAofFileSize, err := r.aof.CurrentAofSize()
 	if err != nil {
-		r.lg.Sugar().Errorf("check aof filesize failed with error: %v", err)
+		r.lg.Errorf("check aof filesize failed with error: %v", err)
 		return
 	}
 	// 上一次aof重写后的大小
@@ -155,10 +157,10 @@ func (r *RedisServer) doAofRewrite() {
 			err2 := r.aof.Rewrite()
 			if err2 != nil {
 				if !errors.Is(err2, ErrAofRewriteIsRunning) {
-					r.lg.Sugar().Errorf("aof rewrite failed with error: %v", err2)
+					r.lg.Errorf("aof rewrite failed with error: %v", err2)
 				}
 			} else {
-				r.lg.Sugar().Info("aof rewrite successfully")
+				r.lg.Info("aof rewrite successfully")
 			}
 		}()
 	}

@@ -9,9 +9,9 @@ import (
 type EncodingType int
 
 const (
-	EncInt16 EncodingType = 0
-	EncInt32 EncodingType = 1
-	EncInt64 EncodingType = 2
+	EncInt16 EncodingType = iota
+	EncInt32
+	EncInt64
 )
 
 type RangeFunc func(index int, value int64) bool
@@ -34,16 +34,16 @@ func NewIntSet(encoding EncodingType) *IntSet {
 	}
 }
 
-func (is *IntSet) Add(value int64) {
+func (is *IntSet) Add(value int64) int64 {
 	// 查看value适合的编码
 	valEnc := is.valueEncoding(value)
 	if valEnc > is.encoding {
 		is.upgradeAndAdd(value)
-		return
+		return 1
 	}
 	insterPos, exists := is.Search(value)
 	if exists {
-		return
+		return 0
 	}
 	// 每个ele占用的字节数
 	bytePerEle := is.byteSize()
@@ -56,6 +56,7 @@ func (is *IntSet) Add(value int64) {
 	copy(newContents[offset:], buf)
 	is.contents = newContents
 	is.length += 1
+	return 1
 }
 
 func (is *IntSet) Remove(value int64) (success bool) {
@@ -211,6 +212,10 @@ func (is *IntSet) valueEncoding(value int64) EncodingType {
 		result = EncInt64
 	}
 	return result
+}
+
+func (is *IntSet) Len() int {
+	return is.length
 }
 
 func (is *IntSet) Range(fun RangeFunc) {

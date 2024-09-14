@@ -2,6 +2,8 @@ package obj
 
 import (
 	"errors"
+	"fmt"
+	"github.com/xuning888/godis-tiny/pkg/datastruct/dict"
 	"github.com/xuning888/godis-tiny/pkg/datastruct/intset"
 	"github.com/xuning888/godis-tiny/pkg/datastruct/list"
 	"github.com/xuning888/godis-tiny/pkg/datastruct/sds"
@@ -116,6 +118,44 @@ func NewIntSetObject() *RedisObject {
 	object := NewObject(RedisSet, intSet)
 	object.Encoding = EncIntSet
 	return object
+}
+
+func NewHashObject() *RedisObject {
+	redisObj := NewObject(RedisHash, dict.MakeSimpleDict())
+	redisObj.Encoding = EncHT
+	return redisObj
+}
+
+func NewSetObject(members [][]byte) (*RedisObject, int64) {
+	var encoding = EncIntSet
+	var distinct int64 = 0
+	intSet := intset.NewIntSet(intset.EncInt16)
+	simpleDict := dict.MakeSimpleDict()
+	for idx, member := range members {
+		number, err := strconv.ParseInt(string(member), 10, 64)
+		if err == nil {
+			distinct += intSet.Add(number)
+		} else {
+			distinct = 0
+			encoding = EncHT
+			intSet.Range(func(index int, value int64) bool {
+				distinct += int64(simpleDict.Put(fmt.Sprintf("%d", value), struct{}{}))
+				return true
+			})
+			for _, mem := range members[idx:] {
+				distinct += int64(simpleDict.Put(string(mem), struct{}{}))
+			}
+			break
+		}
+	}
+	redisObject := NewObject(RedisSet, nil)
+	redisObject.Encoding = encoding
+	if encoding == EncIntSet {
+		redisObject.Ptr = intSet
+	} else {
+		redisObject.Ptr = simpleDict
+	}
+	return redisObject, distinct
 }
 
 func NewListObject() *RedisObject {
