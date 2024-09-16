@@ -46,10 +46,10 @@ func NewZipList() *ZipList {
 	return zl
 }
 
-func (zl *ZipList) Push(data []byte) error {
+func (zl *ZipList) PushBack(data []byte) error {
 	oldZlBytes, oldZlTail := zl.zlBytes(), zl.zlTail()
 	prevLen := oldZlBytes - oldZlTail - 1
-	entry, err := zl.encode(prevLen, data)
+	entry, err := encode(prevLen, data)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (zl *ZipList) Index(index int) ([]byte, error) {
 			pos++
 			if i == index {
 				byteValue := datas[pos]
-				return []byte(fmt.Sprintf("%d", byteValue)), nil
+				return []byte(fmt.Sprintf("%d", int8(byteValue))), nil
 			}
 			pos++
 		} else if reqLen>>4 == 0x0F && reqLen<<4 != 0 {
@@ -175,100 +175,100 @@ func (zl *ZipList) Len() int {
 	return zl.zlLen()
 }
 
-func encodingPrevLen(prevLen int) (*bytes.Buffer, error) {
-	var size = 0
-	if prevLen < 254 {
-		size = 1
-	} else {
-		size = 5
-	}
-	buf := bytes.NewBuffer(make([]byte, 0, size))
-	if size == 1 {
-		if err := binary.Write(buf, binary.LittleEndian, byte(prevLen)); err != nil {
-			return nil, err
-		}
-	} else {
-		buf.WriteByte(254)
-		if err := binary.Write(buf, binary.LittleEndian, uint32(prevLen)); err != nil {
-			return nil, err
-		}
-	}
-	return buf, nil
-}
-
-func (zl *ZipList) encode(prevLen int, data []byte) ([]byte, error) {
-	buffer, err := encodingPrevLen(prevLen)
-	if err != nil {
+func encode(prevLen int, data []byte) ([]byte, error) {
+	buff := bytes.NewBuffer(make([]byte, 0, 6))
+	if err := encodePrevLen(prevLen, buff); err != nil {
 		return nil, err
 	}
-	if value, yes := zl.maybeInt(data); yes {
-		if value >= math.MinInt8 && value <= math.MaxInt8 {
-			if value >= 0 && value <= 12 {
-				buffer.WriteByte(encInt8Embed | byte(value))
-			} else {
-				buffer.WriteByte(encInt8)
-				buffer.WriteByte(byte(value))
-			}
-		} else if value >= math.MinInt16 && value <= math.MaxInt16 {
-			buffer.WriteByte(encInt16)
-			buffer.WriteByte(byte(value >> 8))
-			buffer.WriteByte(byte(value & 0xFF))
-		} else if value >= minInt24 && value <= maxInt24 {
-			buffer.WriteByte(encInt24)
-			buffer.WriteByte(byte(value >> 16))
-			buffer.WriteByte(byte(value >> 8))
-			buffer.WriteByte(byte(value))
-		} else if value >= math.MinInt32 && value <= math.MaxInt32 {
-			buffer.WriteByte(encInt32)
-			buffer.WriteByte(byte(value >> 24))
-			buffer.WriteByte(byte(value >> 16))
-			buffer.WriteByte(byte(value >> 8))
-			buffer.WriteByte(byte(value))
-		} else if value >= math.MinInt64 && value <= math.MaxInt64 {
-			buffer.WriteByte(encInt64)
-			buffer.WriteByte(byte(value >> 56))
-			buffer.WriteByte(byte(value >> 48))
-			buffer.WriteByte(byte(value >> 40))
-			buffer.WriteByte(byte(value >> 32))
-			buffer.WriteByte(byte(value >> 24))
-			buffer.WriteByte(byte(value >> 16))
-			buffer.WriteByte(byte(value >> 8))
-			buffer.WriteByte(byte(value))
-		}
+	if value, yes := maybeInt(data); yes {
+		encodeInt(value, buff)
 	} else {
-		if len(data) < 63 {
-			buffer.WriteByte(byte(0x00 | len(data)))
-		} else {
-			if len(data) <= ((1 << 14) - 1) {
-				length := int16(len(data))
-				high, low := byte(length>>8)|0x40, byte(length&0xFF)
-				buffer.Write([]byte{high, low})
-			} else if len(data) <= 4294967295 {
-				// 长度在16384到4294967295字节之间的情况，用五个字节表示长度。
-				length := len(data)
-				buffer.WriteByte(byte(0x80 | (length>>32)&0xFF))
-				buffer.WriteByte(byte((length >> 24) & 0xFF))
-				buffer.WriteByte(byte((length >> 16) & 0xFF))
-				buffer.WriteByte(byte((length >> 8) & 0xFF))
-				buffer.WriteByte(byte(length & 0xFF))
-			} else {
-				return nil, ErrorTooLarge
-			}
+		if err := encodeRaw(data, buff); err != nil {
+			return nil, err
 		}
-		buffer.Write(data)
 	}
-	return buffer.Bytes(), nil
+	return buff.Bytes(), nil
 }
 
-func (zl *ZipList) maybeInt(data []byte) (value int, yes bool) {
-	if number, err := strconv.Atoi(string(data)); err != nil {
-		value = 0
-		yes = false
+func encodePrevLen(prevLen int, buff *bytes.Buffer) error {
+	if prevLen < 254 {
+		if err := binary.Write(buff, binary.LittleEndian, byte(prevLen)); err != nil {
+			return err
+		}
 	} else {
-		value = number
-		yes = true
+		buff.WriteByte(254)
+		if err := binary.Write(buff, binary.LittleEndian, uint32(prevLen)); err != nil {
+			return err
+		}
 	}
-	return
+	return nil
+}
+
+func encodeInt(value int, buff *bytes.Buffer) {
+	if value >= math.MinInt8 && value <= math.MaxInt8 {
+		if value >= 0 && value <= 12 {
+			buff.WriteByte(encInt8Embed | byte(value))
+		} else {
+			buff.WriteByte(encInt8)
+			buff.WriteByte(byte(value))
+		}
+	} else if value >= math.MinInt16 && value <= math.MaxInt16 {
+		buff.WriteByte(encInt16)
+		buff.WriteByte(byte(value >> 8))
+		buff.WriteByte(byte(value & 0xFF))
+	} else if value >= minInt24 && value <= maxInt24 {
+		buff.WriteByte(encInt24)
+		buff.WriteByte(byte(value >> 16))
+		buff.WriteByte(byte(value >> 8))
+		buff.WriteByte(byte(value))
+	} else if value >= math.MinInt32 && value <= math.MaxInt32 {
+		buff.WriteByte(encInt32)
+		buff.WriteByte(byte(value >> 24))
+		buff.WriteByte(byte(value >> 16))
+		buff.WriteByte(byte(value >> 8))
+		buff.WriteByte(byte(value))
+	} else if value >= math.MinInt64 && value <= math.MaxInt64 {
+		buff.WriteByte(encInt64)
+		buff.WriteByte(byte(value >> 56))
+		buff.WriteByte(byte(value >> 48))
+		buff.WriteByte(byte(value >> 40))
+		buff.WriteByte(byte(value >> 32))
+		buff.WriteByte(byte(value >> 24))
+		buff.WriteByte(byte(value >> 16))
+		buff.WriteByte(byte(value >> 8))
+		buff.WriteByte(byte(value))
+	}
+}
+
+func encodeRaw(data []byte, buff *bytes.Buffer) (err error) {
+	if len(data) < 63 {
+		buff.WriteByte(byte(0x00 | len(data)))
+		buff.Write(data)
+	} else if len(data) <= ((1 << 14) - 1) {
+		length := int16(len(data))
+		high, low := byte(length>>8)|0x40, byte(length&0xFF)
+		buff.Write([]byte{high, low})
+		buff.Write(data)
+	} else if len(data) <= 4294967295 {
+		// 长度在16384到4294967295字节之间的情况，用五个字节表示长度。
+		length := len(data)
+		buff.WriteByte(byte(0x80 | (length>>32)&0xFF))
+		buff.WriteByte(byte((length >> 24) & 0xFF))
+		buff.WriteByte(byte((length >> 16) & 0xFF))
+		buff.WriteByte(byte((length >> 8) & 0xFF))
+		buff.WriteByte(byte(length & 0xFF))
+		buff.Write(data)
+	} else {
+		err = ErrorTooLarge
+	}
+	return nil
+}
+
+func maybeInt(data []byte) (value int, yes bool) {
+	if number, err := strconv.Atoi(string(data)); err == nil {
+		return number, true
+	}
+	return 0, false
 }
 
 func (zl *ZipList) setZlBytes(size uint32) {

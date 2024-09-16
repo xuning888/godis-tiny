@@ -9,11 +9,15 @@ import (
 )
 
 func TestNewZipList(t *testing.T) {
-	values := []string{"name", "tielei", "age", "20"}
+	values := []string{"-2", "name", "tielei", "age", "20"}
 	zllist := NewZipList()
+	size := 0
 	for _, value := range values {
-		zllist.Push([]byte(value))
+		b := []byte(value)
+		size += len(b)
+		zllist.PushBack(b)
 	}
+	t.Logf("size: %v", size)
 	t.Logf("zlBytes: %v\n", zllist.zlBytes())
 	t.Logf("zlTail: %v\n", zllist.zlTail())
 	t.Logf("zlLen: %v\n", zllist.zlLen())
@@ -24,9 +28,9 @@ func TestNewZipList(t *testing.T) {
 	}
 }
 
-func TestPush_Int(t *testing.T) {
+func TestPushBack_Int(t *testing.T) {
 	values := []string{
-		"1", "12", "20",
+		"1", "12", "20", "name", "tielei", "age", "20",
 		strconv.Itoa(math.MinInt16),
 		strconv.Itoa(math.MinInt16 + 1),
 		strconv.Itoa(math.MaxInt16),
@@ -45,9 +49,13 @@ func TestPush_Int(t *testing.T) {
 		strconv.Itoa(math.MaxInt64 - 1),
 	}
 	zllist := NewZipList()
+	size := 0
 	for _, value := range values {
-		zllist.Push([]byte(value))
+		b := []byte(value)
+		size += len(b)
+		zllist.PushBack(b)
 	}
+	t.Logf("size: %v", size)
 	t.Logf("zlBytes: %v\n", zllist.zlBytes())
 	t.Logf("zlTail: %v\n", zllist.zlTail())
 	t.Logf("zlLen: %v\n", zllist.zlLen())
@@ -58,16 +66,20 @@ func TestPush_Int(t *testing.T) {
 	}
 }
 
-func TestPush_Raw(t *testing.T) {
+func TestPushBack_Raw(t *testing.T) {
 	values := []string{
 		"unsigned char *ziplistNew(void);\nunsigned char *ziplistMerge(unsigned char **first, unsigned char **second);\nunsigned char *ziplistPush(unsigned char *zl, unsigned char *s, unsigned int slen, int where);",
 		buildStr((1 << 14) - 1),
 		buildStr(1 << 14),
 	}
+	size := 0
 	zllist := NewZipList()
 	for _, value := range values {
-		zllist.Push([]byte(value))
+		b := []byte(value)
+		size += len(b)
+		zllist.PushBack(b)
 	}
+	t.Logf("size: %v", size)
 	t.Logf("zlBytes: %v\n", zllist.zlBytes())
 	t.Logf("zlTail: %v\n", zllist.zlTail())
 	t.Logf("zlLen: %v\n", zllist.zlLen())
