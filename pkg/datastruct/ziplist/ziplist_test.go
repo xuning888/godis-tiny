@@ -26,6 +26,13 @@ func TestNewZipList(t *testing.T) {
 		value, _ := zllist.Index(i)
 		assert.Equal(t, values[i], string(value))
 	}
+	values = append([]string{"1", "2"}, values...)
+	zllist.PushFront([]byte("2"))
+	zllist.PushFront([]byte("1"))
+	for i := 0; i < zllist.Len(); i++ {
+		value, _ := zllist.Index(i)
+		assert.Equal(t, values[i], string(value))
+	}
 }
 
 func TestPushBack_Int(t *testing.T) {

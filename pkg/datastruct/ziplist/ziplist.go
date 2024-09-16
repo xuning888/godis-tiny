@@ -67,6 +67,26 @@ func (zl *ZipList) PushBack(data []byte) error {
 	return nil
 }
 
+func (zl *ZipList) PushFront(data []byte) error {
+
+	temp := NewZipList()
+	if err := temp.PushBack(data); err != nil {
+		return err
+	}
+
+	for i := 0; i < zl.Len(); i++ {
+		if itemDate, err := zl.Index(i); err != nil {
+			return err
+		} else {
+			if err2 := temp.PushBack(itemDate); err2 != nil {
+				return err2
+			}
+		}
+	}
+	*zl = *temp
+	return nil
+}
+
 func (zl *ZipList) Index(index int) ([]byte, error) {
 	zlLen := zl.zlLen()
 	if index < 0 || index >= zlLen {
