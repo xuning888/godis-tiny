@@ -16,6 +16,9 @@ const (
 )
 
 const (
+	encRaw00     = 0x00
+	encRaw01     = 0x40
+	encRaw11     = 0x80
 	encInt8Embed = 0xF0
 	encInt8      = 0xFE
 	encInt16     = 0xC0
@@ -242,17 +245,17 @@ func encodeInt(value int, buff *bytes.Buffer) {
 
 func encodeRaw(data []byte, buff *bytes.Buffer) (err error) {
 	if len(data) < 63 {
-		buff.WriteByte(byte(0x00 | len(data)))
+		buff.WriteByte(byte(encRaw00 | len(data)))
 		buff.Write(data)
 	} else if len(data) <= ((1 << 14) - 1) {
 		length := int16(len(data))
-		high, low := byte(length>>8)|0x40, byte(length&0xFF)
+		high, low := encRaw01|byte(length>>8), byte(length&0xFF)
 		buff.Write([]byte{high, low})
 		buff.Write(data)
 	} else if len(data) <= 4294967295 {
 		// 长度在16384到4294967295字节之间的情况，用五个字节表示长度。
 		length := len(data)
-		buff.WriteByte(byte(0x80 | (length>>32)&0xFF))
+		buff.WriteByte(byte(encRaw11 | (length>>32)&0xFF))
 		buff.WriteByte(byte((length >> 24) & 0xFF))
 		buff.WriteByte(byte((length >> 16) & 0xFF))
 		buff.WriteByte(byte((length >> 8) & 0xFF))
