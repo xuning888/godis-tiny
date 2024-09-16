@@ -1,8 +1,8 @@
-# Godis - Redis Server Implementation in Go
+# Godis-tiny - Redis Server in golang
 
 [中文](./README_ZH.md)
 ## Introduction
-This project is a learning exercise inspired by [HDT3213's godis](https://github.com/HDT3213/godis). The goal is to gain a deeper understanding of the inner workings of a Redis server and Go programming by examining and implementing parts of the godis codebase. This is primarily a study project for educational purposes.
+This project was created during my study of [redis3.2](https://github.com/redis/redis/tree/3.2) with the aim of gaining a deeper understanding of the implementation principles of the Redis server and Go programming. This project is mainly a learning-oriented project for self-learning and exploration.
 
 ## Current Features
 - Implementation of several Redis commands
@@ -21,5 +21,6 @@ This project is a learning exercise inspired by [HDT3213's godis](https://github
 - macOS
 - Windows (Performance may be limited due to partial gnet support)
 
-## Note
-This project is derived from my study of [HDT3213's godis](https://github.com/HDT3213/godis). It is intended for learning and educational purposes. Contributions and feedback are welcome, but please note this is a personal study project and may not be suitable for production use.
+## Acknowledgements
+- HDT3213's [godis](https://github.com/HDT3213/godis)
+- panjf2000's [gnet](https://github.com/panjf2000/gnet)
