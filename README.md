@@ -3,6 +3,8 @@
 ## 简介
 godis-tiny 是一个用 Go 语言实现的简化版 Redis 服务器。我创建这个项目是为了了解 Redis 服务器的实现原理和提高自己的 Go 语言编程技能。
 
+![](docs/image/show.jpg)
+
 ## 开始
 ```shell
 go run main.go
