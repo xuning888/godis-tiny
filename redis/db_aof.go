@@ -35,10 +35,15 @@ func (f *FileBuffer) Write(p []byte) (int, error) {
 	return f.writer.Write(p)
 }
 
+func (f *FileBuffer) Flush() error {
+	return f.writer.Flush()
+}
+
 func (f *FileBuffer) Sync() error {
-	err := f.writer.Flush()
-	if err != nil {
-		return err
+	if f.writer.Buffered() > 0 {
+		if err := f.writer.Flush(); err != nil {
+			return err
+		}
 	}
 	return f.file.Sync()
 }
@@ -138,17 +143,20 @@ func (a *Aof) writeAof(dbIndex int, cmdLine [][]byte) {
 	}
 	cmdLineData := MakeMultiBulkReply(cmdLine).ToBytes()
 	// 写入文件缓冲区
-	_, err := a.fileBuffer.Write(cmdLineData)
-	if err != nil {
+	if _, err := a.fileBuffer.Write(cmdLineData); err != nil {
 		a.lg.Errorf("write aof file buffer failed with error: %v", err)
 	}
 
-	// 如果模式是always,就将内存中的数据拷贝到磁盘
-	if a.aofFsync == FsyncAlways {
-		err = a.fileBuffer.Sync()
-		if err != nil {
+	switch a.aofFsync {
+	case FsyncNo: // 如果模式是no, 就将内存中的数据写入PageCache,由操作系统来决定何时落盘
+		if err := a.fileBuffer.Flush(); err != nil {
+			a.lg.Errorf("write aof file faild with error: %v", err)
+		}
+	case FsyncAlways: // 如果模式是always,就将内存中的数据写入PageCache, 然后调用fsync, 强制写入磁盘。
+		if err := a.fileBuffer.Sync(); err != nil {
 			a.lg.Errorf("wirte aof file sync fialed with error: %v", err)
 		}
+	default:
 	}
 }
 
@@ -219,10 +227,6 @@ func (a *Aof) fsyncEverySecond() {
 		a.mux.Lock()
 		defer a.mux.Unlock()
 		if a.fileBuffer == nil {
-			return
-		}
-		// 尽量减少sync的次数
-		if a.fileBuffer.Buffered() == 0 {
 			return
 		}
 		if err := a.fileBuffer.Sync(); err != nil {

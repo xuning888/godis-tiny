@@ -25,10 +25,6 @@ func (s *Sds) SdsCat(b []byte) {
 	}
 }
 
-func (s *Sds) Free() {
-	*s = nil
-}
-
 func (s *Sds) String() string {
 	return string(*s)
 }

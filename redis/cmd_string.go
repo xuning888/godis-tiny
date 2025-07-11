@@ -244,7 +244,10 @@ func execIncr(c context.Context, conn *Client) error {
 	if redisObj.Encoding != obj.EncInt {
 		return MakeOutOfRangeOrNotInt().WriteTo(conn)
 	}
-	value := redisObj.Ptr.(int64)
+	value, ok := redisObj.Ptr.(int64)
+	if !ok {
+		return MakeOutOfRangeOrNotInt().WriteTo(conn)
+	}
 	if math.MaxInt64-1 < value {
 		return MakeStandardErrReply("ERR increment or decrement would overflow").WriteTo(conn)
 	}
